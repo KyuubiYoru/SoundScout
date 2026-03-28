@@ -34,6 +34,7 @@ const defaultQuery = (): SearchQuery => ({
   sortDir: "desc",
   offset: 0,
   limit: 50,
+  folderRoot: undefined,
 });
 
 const state = writable<{
@@ -122,6 +123,17 @@ export const searchStore = {
       query: { ...prev.query, offset: prev.query.offset + prev.query.limit },
     }));
     void runSearch(true);
+  },
+  /** Scope search to a library folder (or `null` for whole library). Does not run a search. */
+  setFolderScope(path: string | null) {
+    state.update((prev) => ({
+      ...prev,
+      query: {
+        ...prev.query,
+        folderRoot: path ?? undefined,
+        offset: 0,
+      },
+    }));
   },
   reset() {
     state.set({

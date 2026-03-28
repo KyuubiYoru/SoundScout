@@ -31,18 +31,27 @@
   let tree = $state<FolderNode[]>([]);
   let tags = $state<TagWithCount[]>([]);
 
-  /** `search` = global search results; `folder` = browseAssets. */
-  let browseSource = $state<"search" | "folder">("search");
   let browseAssets = $state<Asset[]>([]);
+  /** Folder listing (browse API) when a tree folder is selected and the search field is empty; otherwise show search results. */
+  let useFolderBrowse = $derived(selectedPath != null && $searchStore.query.text.trim() === "");
+  /** Total assets under the selected folder (recursive); null before first successful count. */
+  let folderTotal = $state<number | null>(null);
+  let folderLoadingMore = $state(false);
   let selectedPath = $state<string | null>(null);
   let selectedId = $state<number | null>(null);
   let selectedIds = $state<number[]>([]);
 
   let batchTag = $state("");
 
-  let displayed = $derived(browseSource === "search" ? $searchStore.results : browseAssets);
-  let displayedTotal = $derived(browseSource === "search" ? $searchStore.total : browseAssets.length);
-  let searchHasMore = $derived(browseSource === "search" && displayed.length < displayedTotal);
+  let displayed = $derived(useFolderBrowse ? browseAssets : $searchStore.results);
+  let displayedTotal = $derived(
+    useFolderBrowse ? (folderTotal ?? browseAssets.length) : $searchStore.total,
+  );
+  let browseHasMore = $derived(
+    useFolderBrowse
+      ? folderTotal != null && browseAssets.length < folderTotal
+      : displayed.length < $searchStore.total,
+  );
 
   const unsubs: Array<() => void> = [];
 
@@ -65,8 +74,13 @@
 
   async function reloadBrowse() {
     try {
-      if (browseSource === "folder" && selectedPath != null) {
-        browseAssets = await ipc.browseFolder(selectedPath, 500, 0);
+      if (selectedPath != null && get(searchStore).query.text.trim() === "") {
+        const [assets, total] = await Promise.all([
+          ipc.browseFolder(selectedPath, 500, 0),
+          ipc.browseFolderCount(selectedPath),
+        ]);
+        browseAssets = assets;
+        folderTotal = total;
       }
     } catch (e) {
       toastStore.show(String(e), "error");
@@ -74,30 +88,42 @@
   }
 
   async function afterRowEdit() {
-    if (browseSource !== "search") await reloadBrowse();
+    if (selectedPath != null && get(searchStore).query.text.trim() === "") await reloadBrowse();
     else await searchStore.refresh();
     await refreshSidebar();
   }
 
   async function selectFolder(path: string) {
-    browseSource = "folder";
+    searchStore.setFolderScope(path);
     selectedPath = path;
     selectedId = null;
     selectedIds = [];
+    folderTotal = null;
+    const hasSearchText = get(searchStore).query.text.trim() !== "";
     try {
-      browseAssets = await ipc.browseFolder(path, 500, 0);
+      const [assets, total] = await Promise.all([
+        ipc.browseFolder(path, 500, 0),
+        ipc.browseFolderCount(path),
+      ]);
+      browseAssets = assets;
+      folderTotal = total;
+      if (hasSearchText) {
+        await searchStore.refresh();
+      }
     } catch (e) {
       browseAssets = [];
+      folderTotal = null;
       toastStore.show(String(e), "error");
     }
   }
 
   function allLibrary() {
-    browseSource = "search";
     selectedPath = null;
     browseAssets = [];
+    folderTotal = null;
     selectedId = null;
     selectedIds = [];
+    searchStore.setFolderScope(null);
     void searchStore.refresh();
   }
 
@@ -206,8 +232,26 @@
     }
   }
 
-  function loadMore() {
-    if (browseSource === "search") searchStore.nextPage();
+  async function loadMore() {
+    if (!useFolderBrowse) {
+      searchStore.nextPage();
+      return;
+    }
+    if (selectedPath == null || folderTotal == null) return;
+    if (browseAssets.length >= folderTotal || folderLoadingMore) return;
+    folderLoadingMore = true;
+    try {
+      const more = await ipc.browseFolder(selectedPath, 500, browseAssets.length);
+      browseAssets = [...browseAssets, ...more];
+    } catch (e) {
+      toastStore.show(String(e), "error");
+    } finally {
+      folderLoadingMore = false;
+    }
+  }
+
+  function focusMainSearch() {
+    document.getElementById("main-search")?.focus();
   }
 
   function onKeyDown(e: KeyboardEvent) {
@@ -216,15 +260,19 @@
       if (e.key === "Escape") settingsOpen = false;
       return;
     }
-    if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (
+      e.key === "F3" ||
+      (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey) ||
+      ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === "k" || e.key === "K"))
+    ) {
       e.preventDefault();
-      document.getElementById("main-search")?.focus();
+      focusMainSearch();
       return;
     }
-    if (e.key === "?" || (e.shiftKey && e.key === "/")) {
+    if (e.key === "?" || e.key === "F1") {
       e.preventDefault();
       toastStore.show(
-        "Shortcuts: / focus search · ? this help · Space play/pause · ←/→ seek · Enter play · Ctrl/⌘+click multi-select · drag row for file path · Shift-drag waveform for clip · Ctrl/⌘+C copy track or clip as file (Tauri)",
+        "Shortcuts: Ctrl/⌘+K · F3 · / focus search · F1 · ? help · Space play/pause · ←/→ seek · i/o notch clip start left/right · Shift+i Shift+o notch end left/right (step in Settings) · Enter play · Ctrl/⌘+click multi-select · drag row for file path · Shift-drag waveform for clip · Ctrl/⌘+C copy (Tauri)",
         "info",
         9000,
       );
@@ -273,6 +321,21 @@
       const d = get(playerStore).duration;
       void playerStore.seek(Math.min(d, t));
       return;
+    }
+    if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+      const k = e.key;
+      if (k === "i" || k === "I") {
+        e.preventDefault();
+        if (e.shiftKey) void playerStore.notchClipEndIn();
+        else void playerStore.notchClipStartOut();
+        return;
+      }
+      if (k === "o" || k === "O") {
+        e.preventDefault();
+        if (e.shiftKey) void playerStore.notchClipEndOut();
+        else void playerStore.notchClipStartIn();
+        return;
+      }
     }
     if (e.key === "Enter" && selectedId != null) {
       const a = displayed.find((x) => x.id === selectedId);
@@ -394,23 +457,26 @@
         </div>
       {/if}
       <div class="meta">
-        {#if $searchStore.loading && browseSource === "search"}
+        {#if $searchStore.loading && !useFolderBrowse}
           <span>Loading…</span>
         {:else}
           <span>{displayed.length} shown · {displayedTotal} total</span>
+          {#if useFolderBrowse && folderLoadingMore}
+            <span class="meta-more"> · Loading more…</span>
+          {/if}
         {/if}
       </div>
       <ResultsList
         assets={displayed}
-        relevanceScores={browseSource === "search" ? $searchStore.relevanceScores : null}
-        searchScoreMode={browseSource === "search" ? ($searchStore.query.searchMode ?? "lexical") : null}
+        relevanceScores={useFolderBrowse ? null : $searchStore.relevanceScores}
+        searchScoreMode={useFolderBrowse ? null : ($searchStore.query.searchMode ?? "lexical")}
         selectedId={selectedId}
         multiSelectedIds={selectedIds}
         onselect={selectAsset}
         onplay={(a) => playerStore.playAsset(a)}
         onDataChange={afterRowEdit}
-        infiniteScroll={searchHasMore}
-        loadingMore={$searchStore.loading}
+        infiniteScroll={browseHasMore}
+        loadingMore={$searchStore.loading || folderLoadingMore}
         onLoadMore={loadMore}
       />
     </main>
@@ -424,11 +490,13 @@
     onRescan={rescan}
     onLibraryWiped={async () => {
       await refreshSidebar();
-      browseSource = "search";
       selectedPath = null;
       browseAssets = [];
+      folderTotal = null;
       selectedId = null;
       selectedIds = [];
+      searchStore.setFolderScope(null);
+      void searchStore.refresh();
     }}
   />
   <ProgressModal
@@ -530,5 +598,8 @@
   .meta {
     font-size: var(--font-size-sm);
     color: var(--text-muted);
+  }
+  .meta-more {
+    opacity: 0.9;
   }
 </style>

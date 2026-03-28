@@ -10,7 +10,12 @@ const emptyConfig = (): AppConfig => ({
     skip_hidden_dirs: true,
     watch_scan_roots: false,
   },
-  playback: { buffer_cache_count: 10, auto_play_on_select: true, loop_playback: false },
+  playback: {
+    buffer_cache_count: 10,
+    auto_play_on_select: true,
+    loop_playback: false,
+    clip_notch_ms: 100,
+  },
   search: { default_sort: "relevance", results_per_page: 50, default_search_mode: "lexical" },
 });
 
@@ -28,6 +33,7 @@ export const settingsStore = {
         ...base.playback,
         ...config.playback,
         loop_playback: config.playback.loop_playback ?? base.playback.loop_playback,
+        clip_notch_ms: config.playback.clip_notch_ms ?? base.playback.clip_notch_ms,
       },
     });
   },
@@ -75,6 +81,13 @@ export const settingsStore = {
     state.update((cfg) => ({
       ...cfg,
       playback: { ...cfg.playback, loop_playback: v },
+    }));
+  },
+  setClipNotchMs(n: number) {
+    const clamped = Math.min(10_000, Math.max(10, Math.floor(n)));
+    state.update((cfg) => ({
+      ...cfg,
+      playback: { ...cfg.playback, clip_notch_ms: clamped },
     }));
   },
 };

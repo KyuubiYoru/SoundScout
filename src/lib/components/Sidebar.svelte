@@ -17,6 +17,15 @@
     onAllLibrary: () => void;
     onTagClick: (name: string) => void;
   } = $props();
+
+  let collapsedPaths = $state<Set<string>>(new Set());
+
+  function toggleCollapsed(path: string) {
+    const next = new Set(collapsedPaths);
+    if (next.has(path)) next.delete(path);
+    else next.add(path);
+    collapsedPaths = next;
+  }
 </script>
 
 <aside class="sidebar">
@@ -26,7 +35,13 @@
   </div>
   <div class="scroll">
     {#if tree.length}
-      <FolderTree nodes={tree} {selectedPath} onselect={onFolderSelect} />
+      <FolderTree
+        nodes={tree}
+        {selectedPath}
+        {collapsedPaths}
+        onToggleCollapsed={toggleCollapsed}
+        onselect={onFolderSelect}
+      />
     {:else}
       <p class="hint">No folders added yet. Open Settings and add a folder to start building your library.</p>
     {/if}

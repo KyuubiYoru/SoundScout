@@ -4,17 +4,24 @@ import { writable, get } from "svelte/store";
 import type { Asset, PostProcessConfig } from "$lib/types";
 import * as ipc from "$lib/ipc";
 import { HybridPlayback } from "$lib/utils/hybridPlayback";
+import { computePeaksFromInterleavedPcmF32 } from "$lib/utils/computePeaksFromPcm";
 import { toastStore } from "./toastStore";
 import { settingsStore } from "./settingsStore";
+import {
+  CLIP_MIN_SEC,
+  clampClipToDuration,
+  shouldDeferClipClampForHybrid,
+} from "$lib/utils/clipBounds";
+import { postProcessStore } from "./postProcessStore";
 
 const hybrid = new HybridPlayback();
+
+/** Re-export for callers that imported from `playerStore`. */
+export { CLIP_MIN_SEC } from "$lib/utils/clipBounds";
 
 /** Prefer chunked decode + gapless Web Audio when the asset is large or long. */
 const STREAM_PCM_MIN_DURATION_MS = 90_000;
 const STREAM_PCM_MIN_BYTES = 12 * 1024 * 1024;
-
-/** Minimum clip length (seconds) for Shift-drag selection. */
-export const CLIP_MIN_SEC = 0.05;
 
 function shouldUseChunkedPcm(asset: Asset): boolean {
   return (
@@ -77,24 +84,6 @@ async function loadFullPcmForAsset(asset: Asset): Promise<PcmCacheEntry> {
 /** Bump to ignore stale preview IPC/fetch results. */
 let previewGeneration = 0;
 
-/** Peak buckets (min/max pairs per bucket) for `[clipStart, clipEnd]` in file seconds. */
-function slicePeaksForTimeRange(
-  peaks: number[],
-  fileDurationSec: number,
-  clipStart: number,
-  clipEnd: number,
-): number[] {
-  if (peaks.length === 0 || fileDurationSec <= 0) return peaks;
-  const buckets = Math.floor(peaks.length / 2);
-  if (buckets === 0) return peaks;
-  const t0 = Math.max(0, clipStart / fileDurationSec);
-  const t1 = Math.min(1, clipEnd / fileDurationSec);
-  let b0 = Math.floor(t0 * buckets);
-  let b1 = Math.ceil(t1 * buckets);
-  b1 = Math.max(b0 + 1, Math.min(buckets, b1));
-  return peaks.slice(b0 * 2, b1 * 2);
-}
-
 async function teardownPcmStreamPlayback(): Promise<void> {
   await streamUnlistenChunk?.();
   await streamUnlistenDone?.();
@@ -113,7 +102,7 @@ const state = writable<{
   volume: number;
   previewActive: boolean;
   previewLoading: boolean;
-  /** Sliced peaks while previewing a clip so the waveform matches the loaded buffer only. */
+  /** Peaks derived from processed preview PCM so the waveform matches export output. */
   previewPeaksOverride: number[] | null;
 }>({
   currentAsset: null,
@@ -132,39 +121,47 @@ function applyHybridVolume(): void {
   hybrid.setVolume(get(state).volume);
 }
 
-let raf: number | null = null;
-
-function clampClipToDuration(
-  clip: { start: number; end: number },
-  dur: number,
-): { start: number; end: number } | null {
-  if (dur <= 0) return null;
-  const end = Math.min(clip.end, dur);
-  const start = Math.min(clip.start, end - CLIP_MIN_SEC);
-  if (end - start < CLIP_MIN_SEC) return null;
-  return { start: Math.max(0, start), end };
+function clipNotchStepSec(): number {
+  const ms = get(settingsStore).playback.clip_notch_ms ?? 100;
+  return Math.max(10, Math.min(10_000, ms)) / 1000;
 }
+
+let raf: number | null = null;
+/** True while `seekInternal` is running from clip enforcement (avoids re-entry; keeps enforcing while hybrid is briefly paused). */
+let clipBoundsSeekInFlight = false;
 
 function enforceClipBounds() {
   const snapshot = get(state);
   if (snapshot.previewActive) return;
   const clip = snapshot.clipRange;
-  if (!clip || !hybrid.isPlaying) return;
+  if (!clip) return;
+  if (clipBoundsSeekInFlight) return;
+  if (!hybrid.isPlaying) return;
   const loopOn = get(settingsStore).playback.loop_playback;
   const playheadTime = hybrid.currentTime;
   if (playheadTime < clip.start) {
-    hybrid.seek(clip.start);
+    clipBoundsSeekInFlight = true;
+    void seekInternal(clip.start).finally(() => {
+      clipBoundsSeekInFlight = false;
+    });
     return;
   }
   if (playheadTime >= clip.end - 0.0015) {
     if (loopOn) {
-      hybrid.seek(clip.start);
+      clipBoundsSeekInFlight = true;
+      void seekInternal(clip.start).finally(() => {
+        clipBoundsSeekInFlight = false;
+      });
     } else {
       hybrid.pause();
-      hybrid.seek(Math.min(clip.end, hybrid.duration || clip.end));
       if (raf) cancelAnimationFrame(raf);
       raf = null;
-      state.update((prev) => ({ ...prev, isPlaying: false, currentTime: hybrid.currentTime }));
+      state.update((prev) => ({ ...prev, isPlaying: false }));
+      const endPos = Math.min(clip.end, hybrid.duration || clip.end);
+      clipBoundsSeekInFlight = true;
+      void seekInternal(endPos).finally(() => {
+        clipBoundsSeekInFlight = false;
+      });
     }
   }
 }
@@ -182,12 +179,21 @@ function tick() {
         : snapshot.duration;
   let nextClip: (typeof snapshot)["clipRange"] = snapshot.clipRange;
   if (nextClip && dur > 0 && !snapshot.previewActive) {
-    const clamped = clampClipToDuration(nextClip, dur);
-    if (clamped == null) {
-      nextClip = null;
-      syncHybridLoopFromSettings();
-    } else if (clamped.start !== nextClip.start || clamped.end !== nextClip.end) {
-      nextClip = clamped;
+    const assetFullDur =
+      snapshot.currentAsset?.durationMs != null && snapshot.currentAsset.durationMs > 0
+        ? snapshot.currentAsset.durationMs / 1000
+        : 0;
+    const deferClamp =
+      assetFullDur > 0 &&
+      shouldDeferClipClampForHybrid(nextClip, dur, assetFullDur);
+    if (!deferClamp) {
+      const clamped = clampClipToDuration(nextClip, dur);
+      if (clamped == null) {
+        nextClip = null;
+        syncHybridLoopFromSettings();
+      } else if (clamped.start !== nextClip.start || clamped.end !== nextClip.end) {
+        nextClip = clamped;
+      }
     }
   }
   state.update((prev) => ({
@@ -322,6 +328,98 @@ export const playerStore = {
     state.update((prev) => ({ ...prev, clipRange: { start: lo, end: hi } }));
     syncHybridLoopFromSettings();
     await seekInternal(lo);
+  },
+  async commitClipRangeAndRefreshPreview(
+    start: number,
+    end: number,
+    config: PostProcessConfig,
+  ): Promise<void> {
+    const asset = get(state).currentAsset;
+    if (!asset) return;
+    const fullDur =
+      asset.durationMs != null && asset.durationMs > 0 ? asset.durationMs / 1000 : 0;
+    if (fullDur <= 0) return;
+    const lo = Math.max(0, Math.min(start, end, fullDur));
+    const hi = Math.max(lo + CLIP_MIN_SEC, Math.min(Math.max(start, end), fullDur));
+    state.update((prev) => ({ ...prev, clipRange: { start: lo, end: hi } }));
+    await playerStore.previewProcessed(config);
+  },
+  /** Move clip start earlier (`i` — notch left on the start edge). */
+  async notchClipStartOut(): Promise<void> {
+    const stepSec = clipNotchStepSec();
+    const snap = get(state);
+    const cr = snap.clipRange;
+    if (!cr || !snap.currentAsset) return;
+    const nextStart = Math.max(0, cr.start - stepSec);
+    if (nextStart >= cr.end - CLIP_MIN_SEC) return;
+    if (snap.previewActive) {
+      await playerStore.commitClipRangeAndRefreshPreview(
+        nextStart,
+        cr.end,
+        get(postProcessStore),
+      );
+    } else {
+      await playerStore.commitClipRange(nextStart, cr.end);
+    }
+  },
+  /** Move clip start later (`o` — notch right on the start edge). */
+  async notchClipStartIn(): Promise<void> {
+    const stepSec = clipNotchStepSec();
+    const snap = get(state);
+    const cr = snap.clipRange;
+    if (!cr || !snap.currentAsset) return;
+    const nextStart = Math.min(cr.start + stepSec, cr.end - CLIP_MIN_SEC);
+    if (nextStart <= cr.start) return;
+    if (snap.previewActive) {
+      await playerStore.commitClipRangeAndRefreshPreview(
+        nextStart,
+        cr.end,
+        get(postProcessStore),
+      );
+    } else {
+      await playerStore.commitClipRange(nextStart, cr.end);
+    }
+  },
+  /** Move clip end earlier (`Shift+i` — notch left on the end edge). */
+  async notchClipEndIn(): Promise<void> {
+    const stepSec = clipNotchStepSec();
+    const snap = get(state);
+    const cr = snap.clipRange;
+    if (!cr || !snap.currentAsset) return;
+    const nextEnd = Math.max(cr.start + CLIP_MIN_SEC, cr.end - stepSec);
+    if (nextEnd >= cr.end) return;
+    if (snap.previewActive) {
+      await playerStore.commitClipRangeAndRefreshPreview(
+        cr.start,
+        nextEnd,
+        get(postProcessStore),
+      );
+    } else {
+      await playerStore.commitClipRange(cr.start, nextEnd);
+    }
+  },
+  /** Move clip end later (`Shift+o` — notch right on the end edge). */
+  async notchClipEndOut(): Promise<void> {
+    const stepSec = clipNotchStepSec();
+    const snap = get(state);
+    const cr = snap.clipRange;
+    if (!cr || !snap.currentAsset) return;
+    const fullDur =
+      snap.currentAsset.durationMs != null && snap.currentAsset.durationMs > 0
+        ? snap.currentAsset.durationMs / 1000
+        : 0;
+    if (fullDur <= 0) return;
+    const nextEnd = Math.min(fullDur, cr.end + stepSec);
+    if (nextEnd <= cr.start + CLIP_MIN_SEC) return;
+    if (snap.previewActive) {
+      await playerStore.commitClipRangeAndRefreshPreview(
+        cr.start,
+        nextEnd,
+        get(postProcessStore),
+      );
+    } else {
+      await playerStore.commitClipRange(cr.start, nextEnd);
+    }
   },
   clearClipRange() {
     state.update((prev) => ({ ...prev, clipRange: null }));
@@ -478,20 +576,8 @@ export const playerStore = {
       hybrid.loadPcm(ab, sr, ch);
       applyHybridVolume();
       hybrid.setLoopPolicy(true, false);
-      const peakSource = get(state);
-      let previewPeaks: number[] | null = null;
-      if (args.isClip && peakSource.clipRange && peakSource.peaks.length > 0) {
-        const fileDurSec =
-          asset.durationMs != null && asset.durationMs > 0
-            ? asset.durationMs / 1000
-            : Math.max(peakSource.clipRange.end, peakSource.duration || 0, hybrid.duration || 0);
-        previewPeaks = slicePeaksForTimeRange(
-          peakSource.peaks,
-          fileDurSec,
-          peakSource.clipRange.start,
-          peakSource.clipRange.end,
-        );
-      }
+      const peakRes = get(settingsStore).indexing.peak_resolution;
+      const previewPeaks = computePeaksFromInterleavedPcmF32(ab, ch, peakRes);
       state.update((prev) => ({
         ...prev,
         duration: hybrid.duration,
@@ -518,14 +604,18 @@ export const playerStore = {
 
   async stopPreview(): Promise<void> {
     previewGeneration += 1;
-    state.update((prev) => ({
-      ...prev,
-      previewActive: false,
-      previewLoading: false,
-      previewPeaksOverride: null,
-    }));
     const asset = get(state).currentAsset;
-    if (asset) await playerStore.playAsset(asset, { preserveClip: true });
+    if (!asset) {
+      state.update((prev) => ({
+        ...prev,
+        previewActive: false,
+        previewLoading: false,
+        previewPeaksOverride: null,
+      }));
+      return;
+    }
+    /** Keep `previewActive` true until `playAsset` reloads hybrid; avoids clamping clip to preview duration. */
+    await playerStore.playAsset(asset, { preserveClip: true });
   },
   pause() {
     hybrid.pause();

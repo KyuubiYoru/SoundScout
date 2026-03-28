@@ -20,6 +20,8 @@
     autocomplete="off"
     spellcheck="false"
     aria-label="Search"
+    title="Focus from anywhere: Ctrl+K or ⌘+K, F3, or /"
+    aria-keyshortcuts="Control+K Meta+K F3 Slash"
   />
 </div>
 

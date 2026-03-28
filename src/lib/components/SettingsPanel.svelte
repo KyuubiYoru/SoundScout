@@ -219,6 +219,20 @@
             onchange={(e) => settingsStore.setBufferCacheCount(Number(e.currentTarget.value))}
           />
         </label>
+        <label class="field">
+          Clip notch step (ms)
+          <input
+            type="number"
+            min="10"
+            max="10000"
+            step="10"
+            value={$settingsStore.playback.clip_notch_ms ?? 100}
+            onchange={(e) => settingsStore.setClipNotchMs(Number(e.currentTarget.value))}
+          />
+        </label>
+        <p class="hint">
+          <kbd>i</kbd> / <kbd>o</kbd> nudge the clip <strong>start</strong> left or right; <kbd>Shift</kbd>+<kbd>i</kbd> / <kbd>Shift</kbd>+<kbd>o</kbd> nudge the <strong>end</strong>.
+        </p>
       </section>
       <section>
         <h3>Library database</h3>
@@ -363,6 +377,14 @@
     color: var(--text-muted);
     margin: var(--spacing-sm) 0;
     line-height: 1.4;
+  }
+  .hint kbd {
+    font-size: 0.9em;
+    padding: 1px 5px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    font-family: inherit;
   }
   .row-btns {
     display: flex;

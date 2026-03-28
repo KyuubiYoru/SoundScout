@@ -18,6 +18,8 @@ export interface AppConfig {
     buffer_cache_count: number;
     auto_play_on_select: boolean;
     loop_playback: boolean;
+    /** Keyboard `i` / `o` clip end nudge step (milliseconds). Default 100. */
+    clip_notch_ms?: number;
   };
   search: {
     default_sort: string;

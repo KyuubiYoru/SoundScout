@@ -24,6 +24,10 @@ export async function browseFolder(folder: string, limit: number, offset: number
   return invoke("browse_folder", { folder, limit, offset });
 }
 
+export async function browseFolderCount(folder: string): Promise<number> {
+  return invoke<number>("browse_folder_count", { folder });
+}
+
 export async function getFolderTree(): Promise<FolderNode[]> {
   return invoke("get_folder_tree");
 }

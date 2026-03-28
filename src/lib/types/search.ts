@@ -17,6 +17,8 @@ export interface SearchQuery {
   favoritesOnly: boolean;
   tags?: string[] | null;
   publisher?: string | null;
+  /** When set, limit search to this folder and subfolders (recursive). */
+  folderRoot?: string | null;
   sortBy: SortField;
   sortDir: SortDirection;
   offset: number;
