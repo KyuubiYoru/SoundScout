@@ -1,0 +1,113 @@
+---
+description: Code readability standards — no magic numbers, descriptive names, language idioms
+alwaysApply: true
+---
+
+# Code Readability
+
+## No Magic Numbers
+
+Replace bare literals with named constants.
+
+```gdscript
+# BAD
+if health < 25:
+    speed = speed * 0.5
+
+# GOOD
+const LOW_HEALTH_THRESHOLD = 25
+const WOUNDED_SPEED_MULTIPLIER = 0.5
+
+if health < LOW_HEALTH_THRESHOLD:
+    speed = speed * WOUNDED_SPEED_MULTIPLIER
+```
+
+```csharp
+// BAD
+if (health < 25) speed *= 0.5f;
+
+// GOOD
+const int LowHealthThreshold = 25;
+const float WoundedSpeedMultiplier = 0.5f;
+
+if (health < LowHealthThreshold) speed *= WoundedSpeedMultiplier;
+```
+
+## Descriptive Variable Names
+
+Single-character names are only acceptable for loop indices (`i`, `j`, `k`) and common math (`x`, `y`, `z`). All other variables must have meaningful names.
+
+```gdscript
+# BAD
+var d = 0.0
+var t = get_node("Timer")
+func calc(a, b):
+    return a + b
+
+# GOOD
+var distance = 0.0
+var respawn_timer = get_node("Timer")
+func calculate_damage(base_damage, multiplier):
+    return base_damage * multiplier
+```
+
+## Language Idioms
+
+Use the idiomatic patterns of the language in use.
+
+**GDScript**
+```gdscript
+# Use @export, @onready, typed arrays, match instead of if/elif chains
+@onready var sprite: Sprite2D = $Sprite2D
+
+match state:
+    State.IDLE: handle_idle()
+    State.RUNNING: handle_running()
+    _: push_error("Unhandled state: %s" % state)
+```
+
+**C#**
+```csharp
+// Use properties over public fields, pattern matching, LINQ where appropriate
+public float MaxHealth { get; private set; }
+
+if (node is Player player)
+    player.TakeDamage(damage);
+```
+
+**Python**
+```python
+# Use list comprehensions, context managers, f-strings
+names = [item.name for item in inventory if item.is_equipped]
+
+with open(path) as file:
+    content = file.read()
+```
+
+**Rust**
+```rust
+// Use ? over unwrap/expect for error propagation
+fn load_config(path: &Path) -> Result<Config, AppError> {
+    let content = fs::read_to_string(path)?;
+    let config = toml::from_str(&content)?;
+    Ok(config)
+}
+
+// Use iterators over manual loops
+let active_names: Vec<String> = players
+    .iter()
+    .filter(|p| p.is_active)
+    .map(|p| p.name.clone())
+    .collect();
+
+// Use type aliases to give meaning to primitives
+type TrackId = u32;
+type SampleRate = u32;
+
+// Use match exhaustively — no catch-all _ unless truly unreachable
+match event {
+    Event::Play(track_id) => player.play(track_id),
+    Event::Pause => player.pause(),
+    Event::Stop => player.stop(),
+}
+```
