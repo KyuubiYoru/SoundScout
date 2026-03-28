@@ -51,11 +51,11 @@
         type="button"
         class:active={currentMode === m.id}
         {disabled}
-        title={disabled ? "Run Settings → Rebuild text embeddings first" : m.label}
+        title={disabled ? "Go to Settings and run Rebuild text embeddings to enable this mode" : m.label === "Lexical" ? "Search by matching exact words and phrases" : m.label === "Vector" ? "Search by meaning, not just exact words" : "Search by both meaning and exact words"}
         onclick={() => setMode(m.id)}>{m.label}</button>
     {/each}
   </div>
-  <label class="chk">
+  <label class="chk" title="Show only files you have marked as favorites">
     <input
       type="checkbox"
       checked={$searchStore.query.favoritesOnly}
@@ -63,7 +63,7 @@
     />
     Favorites
   </label>
-  <label>
+  <label title="Choose how to order the results">
     Sort
     <select
       value={$searchStore.query.sortBy}
@@ -75,7 +75,7 @@
       <option value="date">Date</option>
     </select>
   </label>
-  <label>
+  <label title="Switch between descending and ascending order">
     Dir
     <select
       value={$searchStore.query.sortDir}

@@ -85,27 +85,27 @@
       />
       <p class="wf-hint">
         {#if $playerStore.previewActive}
-          Previewing processed export — waveform matches what you hear · Stop preview to edit clip
+          Previewing with export settings applied. Stop preview to adjust the clip.
         {:else}
-          Shift-drag waveform to set clip · Play stays within clip · Loop repeats the clip{#if tauri} · Export / Copy
-          (full track or clip; Ctrl/⌘+C){/if}
+          Shift-drag to select a clip region. Playback and export will use only that region.{#if tauri} Ctrl/⌘+C to copy.{/if}
         {/if}
       </p>
     </div>
     <div class="controls-col">
       <div class="controls-row actions">
-        <button type="button" onclick={() => void playerStore.toggle()} aria-label="Play or pause">
+        <button type="button" title={$playerStore.isPlaying ? "Pause playback" : "Start playback"} onclick={() => void playerStore.toggle()} aria-label="Play or pause">
           {$playerStore.isPlaying ? "Pause" : "Play"}
         </button>
-        <button type="button" onclick={() => playerStore.stop()} aria-label="Stop">Stop</button>
+        <button type="button" title="Stop playback and return to the start" onclick={() => playerStore.stop()} aria-label="Stop">Stop</button>
         {#if $playerStore.clipRange}
-          <button type="button" class="ghost" onclick={() => playerStore.clearClipRange()} aria-label="Clear clip">
+          <button type="button" class="ghost" title="Remove the selected clip region and use the full track" onclick={() => playerStore.clearClipRange()} aria-label="Clear clip">
             Clear clip
           </button>
         {/if}
         {#if tauri}
           <button
             type="button"
+            title="Save the current track or clip as a WAV file"
             onclick={() => void exportAudio()}
             disabled={!(
               $playerStore.clipRange != null ||
@@ -118,6 +118,7 @@
           </button>
           <button
             type="button"
+            title="Copy the current track or clip to your clipboard as a file"
             onclick={() => void copyAudio()}
             disabled={!(
               $playerStore.clipRange != null ||
@@ -129,7 +130,7 @@
             Copy
           </button>
         {/if}
-        <label class="loop">
+        <label class="loop" title="Repeat the track or clip continuously">
           <input
             type="checkbox"
             checked={$settingsStore.playback.loop_playback}
@@ -137,7 +138,7 @@
           />
           Loop
         </label>
-        <div class="vol" title="Volume">
+        <div class="vol" title="Adjust playback volume">
           <span class="vol-icon" aria-hidden="true">🔊</span>
           <input
             type="range"

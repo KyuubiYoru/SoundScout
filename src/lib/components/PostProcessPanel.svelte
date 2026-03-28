@@ -49,7 +49,7 @@
 <div class="export-settings" aria-label="Export post-processing">
   <span class="label">Export</span>
   <div class="opts">
-    <label class="opt">
+    <label class="opt" title="Remove quiet gaps at the start and end of the file before exporting">
       <input
         type="checkbox"
         checked={$postProcessStore.trimSilence}
@@ -58,7 +58,7 @@
       />
       Trim silence
     </label>
-    <label class="opt">
+    <label class="opt" title="Raise or lower the volume so the loudest peak reaches 0 dB">
       <input
         type="checkbox"
         checked={$postProcessStore.normalizePeak}
@@ -67,7 +67,7 @@
       />
       Normalize
     </label>
-    <label class="opt">
+    <label class="opt" title="Blend the end of the file into its beginning so it repeats seamlessly">
       <input
         type="checkbox"
         checked={$postProcessStore.makeLoopable}
@@ -77,7 +77,7 @@
       Loopable
     </label>
     {#if $postProcessStore.makeLoopable}
-      <label class="opt cross">
+      <label class="opt cross" title="How long the blend between the end and start should last">
         <span>Crossfade</span>
         <select
           value={crossfadeSelectValue($postProcessStore)}
@@ -89,7 +89,7 @@
           <option value="2">2 s</option>
         </select>
       </label>
-      <label class="opt">
+      <label class="opt" title="Write loop point markers into the WAV file so samplers and DAWs can read them">
         <input
           type="checkbox"
           checked={$postProcessStore.embedSmplChunk}

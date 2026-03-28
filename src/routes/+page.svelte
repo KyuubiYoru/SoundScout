@@ -373,7 +373,7 @@
     <div class="search-wrap">
       <SearchBar />
     </div>
-    <button type="button" class="gear" onclick={() => (settingsOpen = true)} aria-label="Settings">⚙</button>
+    <button type="button" class="gear" title="Open settings" onclick={() => (settingsOpen = true)} aria-label="Settings">⚙</button>
   </header>
 
   <div class="body">
@@ -383,13 +383,13 @@
       {#if batchTargetIds().length}
         <div class="batch-bar">
           <span class="batch-label">{batchTargetIds().length} selected</span>
-          <input class="batch-inp" type="text" placeholder="Tag…" bind:value={batchTag} />
-          <button type="button" class="bbtn" onclick={() => void applyBatchTag()}>Tag</button>
-          <button type="button" class="bbtn" onclick={() => void applyBatchFavorite(true)} title="Favorite">★</button>
-          <button type="button" class="bbtn" onclick={() => void applyBatchFavorite(false)} title="Unfavorite">☆</button>
+          <input class="batch-inp" type="text" placeholder="Tag…" title="Enter a tag to apply to the selected files" bind:value={batchTag} />
+          <button type="button" class="bbtn" title="Apply this tag to the selected files" onclick={() => void applyBatchTag()}>Tag</button>
+          <button type="button" class="bbtn" title="Mark selected files as favorites" onclick={() => void applyBatchFavorite(true)}>★</button>
+          <button type="button" class="bbtn" title="Remove favorite from selected files" onclick={() => void applyBatchFavorite(false)}>☆</button>
           <span class="batch-rate">Rate:</span>
           {#each [1, 2, 3, 4, 5] as r}
-            <button type="button" class="bbtn sm" onclick={() => void applyBatchRating(r)}>{r}</button>
+            <button type="button" class="bbtn sm" title={`Rate selected files ${r} star${r > 1 ? "s" : ""}`} onclick={() => void applyBatchRating(r)}>{r}</button>
           {/each}
         </div>
       {/if}

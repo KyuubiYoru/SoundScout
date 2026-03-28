@@ -144,10 +144,10 @@
           {/each}
         </ul>
         <div class="row-btns">
-          <button type="button" class="btn" onclick={addRoot}>Add folder…</button>
-          <button type="button" class="btn" onclick={() => void rescanLibrary()}>Rescan library</button>
+          <button type="button" class="btn" title="Choose a folder to add to your library" onclick={addRoot}>Add folder…</button>
+          <button type="button" class="btn" title="Scan all folders again to pick up new or removed files" onclick={() => void rescanLibrary()}>Rescan library</button>
         </div>
-        <p class="hint">Adding a folder saves settings, scans audio, then builds text embeddings (progress appears in a modal).</p>
+        <p class="hint">Adding a folder saves your settings, scans it for audio files, then builds the search index. A progress window will appear while this runs.</p>
       </section>
       <section>
         <h3>Indexing</h3>
@@ -161,22 +161,20 @@
             onchange={(e) => settingsStore.setPeakResolution(Number(e.currentTarget.value))}
           />
         </label>
-        <p class="hint">Higher values store finer waveform detail (~8 bytes per bucket). Rescan the library to rebuild peaks for files already indexed.</p>
+        <p class="hint">Controls how detailed the waveform display is. Higher values show more detail but use slightly more disk space. Run Rescan library to apply this change to files already in the library.</p>
         <label class="chk">
           <input
             type="checkbox"
             checked={$settingsStore.indexing.watch_scan_roots}
             onchange={(e) => settingsStore.setWatchScanRoots(e.currentTarget.checked)}
           />
-          Watch scan folders for changes (debounced notify — restart app to apply)
+          Watch scan folders for new or removed files (restart the app for this to take effect)
         </label>
       </section>
       <section>
         <h3>Search — text embeddings</h3>
         <p class="hint">
-          Vector/hybrid search uses a built-in ONNX model (<code>all-MiniLM-L6-v2</code>). The first rebuild may download
-          ~90&nbsp;MB of weights into your cache (override with <code>SOUNDSCOUT_EMBED_CACHE</code>). Offline machines need
-          that download to succeed once, or copy the cache directory from another install.
+          Vector and hybrid search use an AI model to understand the meaning of your searches. The first time you rebuild, the app may download around 90 MB of model data. Once downloaded, it works offline. You can move the cache folder to other machines to skip the download.
         </p>
         {#if embedStatus}
           <p class="embed-stat">
@@ -187,7 +185,7 @@
           {rebuildBusy ? "Rebuilding…" : "Rebuild text embeddings"}
         </button>
         <p class="hint">
-          After changing tags or notes, run rebuild so vector search stays in sync with metadata.
+          Run this after adding or editing tags and notes so meaning-based search reflects your changes.
         </p>
       </section>
       <section>
@@ -198,7 +196,7 @@
             checked={$settingsStore.playback.auto_play_on_select}
             onchange={(e) => settingsStore.setAutoPlayOnSelect(e.currentTarget.checked)}
           />
-          Auto-play when selecting a row
+          Start playing automatically when you click a file
         </label>
         <label class="chk">
           <input
@@ -212,7 +210,7 @@
           Loop playback
         </label>
         <label class="field">
-          Decoded PCM cache (rows)
+          Audio cache size (number of files)
           <input
             type="number"
             min="1"
@@ -224,13 +222,13 @@
       </section>
       <section>
         <h3>Library database</h3>
-        <p class="hint">Export or import the whole library (tags, index, embeddings metadata). Import restarts the app.</p>
+        <p class="hint">Export saves a backup of your entire library, including tags, ratings, and search data. Import loads a backup and restarts the app.</p>
         <div class="row-btns">
-          <button type="button" class="btn" onclick={doExport}>Export database…</button>
-          <button type="button" class="btn danger" onclick={doImport}>Import database…</button>
+          <button type="button" class="btn" title="Save a backup of your library to a file" onclick={doExport}>Export database…</button>
+          <button type="button" class="btn danger" title="Load a library backup from a file. The app will restart." onclick={doImport}>Import database…</button>
         </div>
         <p class="hint">
-          Clear removes every row from the library database (same file and schema remain). Use Export first if you want a backup.
+          Clear removes all files, tags, and ratings from the library. The database file itself stays in place. Export a backup first if you want to keep your data.
         </p>
         <button type="button" class="btn danger" disabled={wipeBusy} onclick={doWipeDatabase}>
           {wipeBusy ? "Please wait…" : "Clear library database…"}

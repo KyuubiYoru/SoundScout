@@ -25,9 +25,9 @@
 
   let scoreTitle = $derived(
     scoreMode === "vector"
-      ? "Cosine similarity (−1…1, higher = closer)"
+      ? "How closely this file matches your search (−1 to 1, higher is a better match)"
       : scoreMode === "both"
-        ? "Hybrid score, vector + lexical (0…1, higher = better)"
+        ? "Combined match score using meaning and keywords (0 to 1, higher is a better match)"
         : "",
   );
 
@@ -86,12 +86,12 @@
   }}
   role="button"
   tabindex="0"
-  title="Drag to a DAW or explorer to copy file path"
+  title="Drag this row into your DAW or file browser to use the file"
 >
-  <button type="button" class="star" class:on={asset.favorite} title="Favorite" onclick={toggleFav}>
+  <button type="button" class="star" class:on={asset.favorite} title={asset.favorite ? "Remove from favorites" : "Add to favorites"} onclick={toggleFav}>
     ★
   </button>
-  <span class="badge {extClass(asset.extension)}">{asset.extension}</span>
+  <span class="badge {extClass(asset.extension)}" title="File format">{asset.extension}</span>
   <div class="meta">
     <div class="name">{asset.filename}</div>
     <div class="sub">
@@ -111,7 +111,7 @@
   <div class="dur">{formatDuration(asset.durationMs)}</div>
   <div class="rate" onclick={(e) => e.stopPropagation()}>
     {#each [1, 2, 3, 4, 5] as r}
-      <button type="button" class:active={asset.rating >= r} onclick={(e) => setRating(r, e)}>{r}</button>
+      <button type="button" class:active={asset.rating >= r} title={`Rate ${r} star${r > 1 ? "s" : ""}`} onclick={(e) => setRating(r, e)}>{r}</button>
     {/each}
   </div>
 </div>

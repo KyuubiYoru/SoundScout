@@ -22,19 +22,19 @@
 <aside class="sidebar">
   <div class="head">
     <h2>Library</h2>
-    <button type="button" class="link" onclick={onAllLibrary}>All</button>
+    <button type="button" class="link" title="Show all files in the library" onclick={onAllLibrary}>All</button>
   </div>
   <div class="scroll">
     {#if tree.length}
       <FolderTree nodes={tree} {selectedPath} onselect={onFolderSelect} />
     {:else}
-      <p class="hint">Add a scan folder in Settings — the library will index automatically.</p>
+      <p class="hint">No folders added yet. Open Settings and add a folder to start building your library.</p>
     {/if}
   </div>
   <div class="tags-head">Tags</div>
   <div class="tags">
     {#each tags as t (t.id)}
-      <button type="button" class="tag" onclick={() => onTagClick(t.name)}>
+      <button type="button" class="tag" title={`Filter by tag: ${t.name}`} onclick={() => onTagClick(t.name)}>
         {t.name}
         <span class="n">{t.count}</span>
       </button>
