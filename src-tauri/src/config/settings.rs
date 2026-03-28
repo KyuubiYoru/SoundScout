@@ -58,6 +58,13 @@ pub struct PlaybackConfig {
     pub auto_play: bool,
     #[serde(default)]
     pub loop_playback: bool,
+    /// Step for keyboard clip end nudges (`i` / `o`), in milliseconds.
+    #[serde(default = "default_clip_notch_ms")]
+    pub clip_notch_ms: u32,
+}
+
+fn default_clip_notch_ms() -> u32 {
+    100
 }
 
 impl Default for PlaybackConfig {
@@ -66,6 +73,7 @@ impl Default for PlaybackConfig {
             buffer_cache_count: 10,
             auto_play: true,
             loop_playback: false,
+            clip_notch_ms: default_clip_notch_ms(),
         }
     }
 }

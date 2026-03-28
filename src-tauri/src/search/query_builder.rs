@@ -72,6 +72,18 @@ pub(crate) fn append_filters(sql: &mut String, params: &mut Vec<Value>, query: &
             }
         }
     }
+    if let Some(root) = &query.folder_root {
+        if root.is_empty() {
+            sql.push_str(" AND 1=0");
+        } else if root != "/" {
+            sql.push_str(
+                " AND (a.folder = ? OR (LENGTH(a.folder) > LENGTH(?) AND SUBSTR(a.folder, 1, LENGTH(?)) = ? AND SUBSTR(a.folder, LENGTH(?) + 1, 1) = '/'))",
+            );
+            for _ in 0..5 {
+                params.push(Value::Text(root.clone()));
+            }
+        }
+    }
 }
 
 /// Build `(sql, params)` for the result page.
@@ -275,5 +287,17 @@ mod tests {
         let (sql, _) = build_search_sql(&q);
         assert!(sql.contains("LIMIT"));
         assert!(sql.contains("OFFSET"));
+    }
+
+    #[test]
+    fn build_sql_with_folder_root_subtree() {
+        let q = SearchQuery {
+            folder_root: Some("/lib/a".into()),
+            ..Default::default()
+        };
+        let (sql, p) = build_search_sql(&q);
+        assert!(sql.contains("a.folder = ?"));
+        assert!(sql.contains("SUBSTR(a.folder"));
+        assert!(p.len() >= 5);
     }
 }

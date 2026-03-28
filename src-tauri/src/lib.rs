@@ -78,6 +78,7 @@ pub fn run() {
             commands::search::search,
             commands::search::get_filter_options,
             commands::search::browse_folder,
+            commands::search::browse_folder_count,
             commands::search::get_folder_tree,
             commands::audio::get_audio_data,
             commands::audio::get_audio_pcm_file,

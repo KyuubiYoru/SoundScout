@@ -103,6 +103,9 @@ pub struct SearchQuery {
     pub favorites_only: bool,
     pub tags: Option<Vec<String>>,
     pub publisher: Option<String>,
+    /// When set, only assets under this folder path (recursive) are included — same rules as browse.
+    #[serde(default)]
+    pub folder_root: Option<String>,
     #[serde(default)]
     pub sort_by: SortField,
     #[serde(default)]
@@ -130,6 +133,7 @@ impl Default for SearchQuery {
             favorites_only: false,
             tags: None,
             publisher: None,
+            folder_root: None,
             sort_by: SortField::default(),
             sort_dir: SortDirection::default(),
             offset: 0,

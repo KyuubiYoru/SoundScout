@@ -44,6 +44,12 @@ pub async fn browse_folder(
 }
 
 #[tauri::command]
+pub async fn browse_folder_count(folder: String, state: State<'_, AppState>) -> Result<u64, String> {
+    let conn = state.pool.get().map_err(|e| e.to_string())?;
+    queries::count_assets_under_folder(&conn, &folder).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn get_folder_tree(state: State<'_, AppState>) -> Result<Vec<FolderNode>, String> {
     let conn = state.pool.get().map_err(|e| e.to_string())?;
     let flat = queries::get_folder_tree(&conn).map_err(|e| e.to_string())?;

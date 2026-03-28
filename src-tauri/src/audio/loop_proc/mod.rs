@@ -57,9 +57,14 @@ const POST_LOOP_TRIM_FRAME_GAP: usize = 4;
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PostProcessConfig {
+    /// When true, remove leading/trailing silence per `trim_threshold_db` / `trim_min_silence_ms`.
     pub trim_silence: bool,
+    /// dBFS vs short-window peak; samples below this level count as silence.
     pub trim_threshold_db: f32,
+    /// Minimum length (ms) of leading or trailing silence before that edge is trimmed.
     pub trim_min_silence_ms: f32,
+    /// Width (ms) of the sliding max window used to measure level at each frame (typically 2–8).
+    pub trim_peak_window_ms: f32,
     pub normalize_peak: bool,
     pub normalize_target: f32,
     pub make_loopable: bool,
@@ -238,6 +243,7 @@ pub fn apply(
             sample_rate,
             config.trim_threshold_db,
             config.trim_min_silence_ms,
+            config.trim_peak_window_ms,
         );
         buf = trim::trim_interleaved(&buf, ch, f0, f1);
     }
@@ -481,6 +487,7 @@ mod tests {
             trim_silence: false,
             trim_threshold_db: -60.0,
             trim_min_silence_ms: 50.0,
+            trim_peak_window_ms: 4.0,
             normalize_peak: false,
             normalize_target: 0.97,
             make_loopable: true,
@@ -504,6 +511,7 @@ mod tests {
             trim_silence: false,
             trim_threshold_db: -60.0,
             trim_min_silence_ms: 50.0,
+            trim_peak_window_ms: 4.0,
             normalize_peak: false,
             normalize_target: 0.97,
             make_loopable: true,
@@ -529,6 +537,7 @@ mod tests {
             trim_silence: false,
             trim_threshold_db: -60.0,
             trim_min_silence_ms: 50.0,
+            trim_peak_window_ms: 4.0,
             normalize_peak: true,
             normalize_target: 0.97,
             make_loopable: true,

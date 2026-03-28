@@ -270,7 +270,37 @@ pub fn build_folder_tree(flat: &[(String, u64)]) -> Vec<FolderNode> {
         out
     }
 
-    to_folder_nodes("", &root.children)
+    let mut roots = to_folder_nodes("", &root.children);
+    fn rollup_folder_count(node: &mut FolderNode) -> u64 {
+        let child_sum: u64 = node.children.iter_mut().map(rollup_folder_count).sum();
+        node.count = node.count.saturating_add(child_sum);
+        node.count
+    }
+    for r in &mut roots {
+        rollup_folder_count(r);
+    }
+    roots
+}
+
+/// Count assets under `folder` (that folder and any descendant path). Same rules as [`get_assets_by_folder`].
+pub fn count_assets_under_folder(conn: &Connection, folder: &str) -> Result<u64, SoundScoutError> {
+    if folder.is_empty() {
+        return Ok(0);
+    }
+    if folder == "/" {
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM assets", [], |row| row.get(0))
+            .map_err(SoundScoutError::Database)?;
+        return Ok(n as u64);
+    }
+    let n: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM assets WHERE folder = ?1 OR (LENGTH(folder) > LENGTH(?1) AND SUBSTR(folder, 1, LENGTH(?1)) = ?1 AND SUBSTR(folder, LENGTH(?1) + 1, 1) = '/')",
+            params![folder],
+            |row| row.get(0),
+        )
+        .map_err(SoundScoutError::Database)?;
+    Ok(n as u64)
 }
 
 /// Publisher with asset counts.
@@ -339,22 +369,41 @@ pub fn get_filter_options(conn: &Connection) -> Result<FilterOptions, SoundScout
     })
 }
 
-/// List assets whose `folder` matches.
+/// List assets in `folder` and every nested folder under it (prefix match on the `folder` column).
 pub fn get_assets_by_folder(
     conn: &Connection,
     folder: &str,
     limit: u32,
     offset: u32,
 ) -> Result<Vec<Asset>, SoundScoutError> {
+    if folder.is_empty() {
+        return Ok(Vec::new());
+    }
+    let limit_i = i64::from(limit);
+    let offset_i = i64::from(offset);
+    let mut out = Vec::new();
+    if folder == "/" {
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT id, path, filename, extension, folder, duration_ms, sample_rate, channels, bit_depth, file_size, category, publisher, favorite, rating, notes, play_count FROM assets ORDER BY filename LIMIT ?1 OFFSET ?2",
+            )
+            .map_err(SoundScoutError::Database)?;
+        let rows = stmt
+            .query_map(params![limit_i, offset_i], |row| asset_from_row(row))
+            .map_err(SoundScoutError::Database)?;
+        for r in rows {
+            out.push(r.map_err(SoundScoutError::Database)?);
+        }
+        return Ok(out);
+    }
     let mut stmt = conn
         .prepare_cached(
-            "SELECT id, path, filename, extension, folder, duration_ms, sample_rate, channels, bit_depth, file_size, category, publisher, favorite, rating, notes, play_count FROM assets WHERE folder = ?1 ORDER BY filename LIMIT ?2 OFFSET ?3",
+            "SELECT id, path, filename, extension, folder, duration_ms, sample_rate, channels, bit_depth, file_size, category, publisher, favorite, rating, notes, play_count FROM assets WHERE folder = ?1 OR (LENGTH(folder) > LENGTH(?1) AND SUBSTR(folder, 1, LENGTH(?1)) = ?1 AND SUBSTR(folder, LENGTH(?1) + 1, 1) = '/') ORDER BY filename LIMIT ?2 OFFSET ?3",
         )
         .map_err(SoundScoutError::Database)?;
     let rows = stmt
-        .query_map(params![folder, limit, offset], |row| asset_from_row(row))
+        .query_map(params![folder, limit_i, offset_i], |row| asset_from_row(row))
         .map_err(SoundScoutError::Database)?;
-    let mut out = Vec::new();
     for r in rows {
         out.push(r.map_err(SoundScoutError::Database)?);
     }
@@ -840,6 +889,59 @@ mod tests {
         .expect("ins");
         let v = get_assets_by_folder(&conn, "/x", 50, 0).expect("q");
         assert_eq!(v.len(), 1);
+    }
+
+    #[test]
+    fn get_assets_by_folder_includes_nested_folders() {
+        let pool = DbPool::new_in_memory().expect("pool");
+        let conn = pool.get().expect("c");
+        insert_asset_batch(
+            &conn,
+            &[
+                sample_asset("/x/a.wav", "/x"),
+                sample_asset("/x/sub/b.wav", "/x/sub"),
+            ],
+        )
+        .expect("ins");
+        let v = get_assets_by_folder(&conn, "/x", 50, 0).expect("q");
+        assert_eq!(v.len(), 2);
+        let paths: Vec<_> = v.iter().map(|a| a.path.as_str()).collect();
+        assert!(paths.contains(&"/x/a.wav"));
+        assert!(paths.contains(&"/x/sub/b.wav"));
+    }
+
+    #[test]
+    fn get_assets_by_folder_excludes_sibling_prefix_path() {
+        let pool = DbPool::new_in_memory().expect("pool");
+        let conn = pool.get().expect("c");
+        insert_asset_batch(
+            &conn,
+            &[
+                sample_asset("/x/a.wav", "/x"),
+                sample_asset("/x2/y.wav", "/x2"),
+            ],
+        )
+        .expect("ins");
+        let v = get_assets_by_folder(&conn, "/x", 50, 0).expect("q");
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].path, "/x/a.wav");
+    }
+
+    #[test]
+    fn count_assets_under_folder_matches_recursive_list() {
+        let pool = DbPool::new_in_memory().expect("pool");
+        let conn = pool.get().expect("c");
+        insert_asset_batch(
+            &conn,
+            &[
+                sample_asset("/x/a.wav", "/x"),
+                sample_asset("/x/sub/b.wav", "/x/sub"),
+                sample_asset("/y/c.wav", "/y"),
+            ],
+        )
+        .expect("ins");
+        assert_eq!(count_assets_under_folder(&conn, "/x").expect("c"), 2);
+        assert_eq!(count_assets_under_folder(&conn, "/").expect("root"), 3);
     }
 
     #[test]
