@@ -8,6 +8,9 @@ use notify_debouncer_mini::notify::RecursiveMode;
 use notify_debouncer_mini::{DebounceEventResult, Debouncer};
 use tauri::{Emitter, Runtime};
 
+/// Idle sleep in the watch thread so it never exits while keeping CPU at zero (debouncer runs elsewhere).
+const WATCH_THREAD_IDLE_SLEEP_SEC: u64 = 3600;
+
 /// Spawn a background thread that watches `roots` and calls `emit_fn` after debounced FS activity.
 pub fn spawn_watch<F>(roots: Vec<std::path::PathBuf>, emit_fn: F)
 where
@@ -42,7 +45,7 @@ where
         }
         tracing::info!(target: "soundscout::watch", "watching {} roots", roots.len());
         loop {
-            std::thread::sleep(Duration::from_secs(3600));
+            std::thread::sleep(Duration::from_secs(WATCH_THREAD_IDLE_SLEEP_SEC));
         }
     });
 }

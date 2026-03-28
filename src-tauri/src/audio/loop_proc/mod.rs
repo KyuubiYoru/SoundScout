@@ -5,6 +5,7 @@
 #![allow(clippy::module_name_repetitions)]
 
 mod analysis;
+mod constants;
 mod crossfade;
 mod loop_finder;
 mod normalize;
@@ -17,7 +18,40 @@ mod trim;
 pub use smpl::write_smpl_chunk;
 
 use analysis::classify_mono;
+use constants::MFCC_FFT_SIZE;
 use crossfade::{blend_loop_seam, cross_correlation, weld_loop_wrap_endpoints};
+
+/// Ignore pitch estimates below this (Hz) when converting to period length.
+const FUNDAMENTAL_HZ_FLOOR: f32 = 20.0;
+
+// --- `trim_loop_seam_alignment` ---
+const SEAM_TRIM_MIN_FRAMES: usize = 8;
+/// Used as `frames.saturating_sub(k) / k` to cap shift search.
+const SEAM_SHIFT_STRIDE: usize = 4;
+const SEAM_MAX_SHIFT_ABS: usize = 96;
+const SEAM_WINDOW_FIXED_MAX: usize = 48;
+const SEAM_WINDOW_DIVISOR: usize = 6;
+const SEAM_WINDOW_MIN: usize = 8;
+
+// --- `crossfade_frames_for_clip` / `max_crossfade_frames_for_clip` ---
+const CLIP_MIN_FRAMES_FOR_XF: usize = 4;
+const CROSSFADE_LOWER_IF_CAP_GE8: usize = 8;
+const CROSSFADE_LOWER_IF_CAP_LT8: usize = 2;
+
+// --- `split_swap_crossfade_sec` ---
+const SPLIT_SWAP_MIN_DURATION_SEC: f32 = 0.05;
+const SPLIT_SWAP_MANUAL_MIN_SEC: f32 = 0.5;
+const SPLIT_SWAP_MANUAL_MAX_SEC: f32 = 3.0;
+
+// --- Candidate window vs full export (`apply`) ---
+const CANDIDATE_COVERS_EXPORT_NUM: usize = 9;
+const CANDIDATE_COVERS_EXPORT_DEN: usize = 10;
+const QUASI_PERIODIC_CORR_MIN: f32 = 0.75;
+const MIN_CORR_ALIGN_FRAMES: usize = 8;
+
+// --- Post loop trim (`apply` tail) ---
+const POST_LOOP_TRIM_MAX: usize = 64;
+const POST_LOOP_TRIM_FRAME_GAP: usize = 4;
 
 /// Serde for Tauri command args.
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -76,14 +110,18 @@ fn mono_from_interleaved(buf: &[f32], ch: usize) -> Vec<f32> {
 /// from a mono downmix (which can leave one channel misaligned at the loop).
 fn trim_loop_seam_alignment(interleaved: &[f32], ch: usize, max_shift: usize) -> Vec<f32> {
     let frames = interleaved.len() / ch;
-    if frames < 8 || max_shift == 0 || ch == 0 {
+    if frames < SEAM_TRIM_MIN_FRAMES || max_shift == 0 || ch == 0 {
         return interleaved.to_vec();
     }
-    let ms = max_shift.min(frames.saturating_sub(4) / 4).min(96);
+    let ms = max_shift
+        .min(frames.saturating_sub(SEAM_SHIFT_STRIDE) / SEAM_SHIFT_STRIDE)
+        .min(SEAM_MAX_SHIFT_ABS);
     if ms == 0 {
         return interleaved.to_vec();
     }
-    let win = (48usize).min(frames / 6).max(8);
+    let win = SEAM_WINDOW_FIXED_MAX
+        .min(frames / SEAM_WINDOW_DIVISOR)
+        .max(SEAM_WINDOW_MIN);
     let mut best_a = 0usize;
     let mut best_b = 0usize;
     let mut best_err = f32::INFINITY;
@@ -123,7 +161,7 @@ fn trim_loop_seam_alignment(interleaved: &[f32], ch: usize, max_shift: usize) ->
 /// Largest crossfade length (frames) allowed by split-swap / seam blend geometry.
 #[inline]
 fn max_crossfade_frames_for_clip(clip_frames: usize) -> usize {
-    if clip_frames < 4 {
+    if clip_frames < CLIP_MIN_FRAMES_FOR_XF {
         0
     } else {
         clip_frames / 2 - 1
@@ -149,7 +187,11 @@ fn crossfade_frames_for_clip(
         }
         None => clip_cap,
     };
-    let lower = if clip_cap >= 8 { 8 } else { 2 };
+    let lower = if clip_cap >= CROSSFADE_LOWER_IF_CAP_GE8 {
+        CROSSFADE_LOWER_IF_CAP_GE8
+    } else {
+        CROSSFADE_LOWER_IF_CAP_LT8
+    };
     xf.clamp(lower.min(clip_cap), clip_cap)
 }
 
@@ -159,13 +201,16 @@ fn crossfade_frames_for_clip(
 fn split_swap_crossfade_sec(crossfade_sec: Option<f32>, clip_frames: usize, sample_rate: u32) -> f32 {
     let cap = max_crossfade_frames_for_clip(clip_frames);
     let max_sec = if cap == 0 {
-        0.05
+        SPLIT_SWAP_MIN_DURATION_SEC
     } else {
-        (cap as f32 / sample_rate as f32).max(0.05)
+        (cap as f32 / sample_rate as f32).max(SPLIT_SWAP_MIN_DURATION_SEC)
     };
     match crossfade_sec {
         None => max_sec,
-        Some(s) => s.clamp(0.5, 3.0).min(max_sec).max(0.05),
+        Some(s) => s
+            .clamp(SPLIT_SWAP_MANUAL_MIN_SEC, SPLIT_SWAP_MANUAL_MAX_SEC)
+            .min(max_sec)
+            .max(SPLIT_SWAP_MIN_DURATION_SEC),
     }
 }
 
@@ -218,7 +263,7 @@ pub fn apply(
 
     let mono = mono_from_interleaved(&buf, ch);
     let (_peak, hz, kind) = classify_mono(&mono, sample_rate);
-    let period_samples = (sample_rate as f32 / hz.max(20.0)).round() as usize;
+    let period_samples = (sample_rate as f32 / hz.max(FUNDAMENTAL_HZ_FLOOR)).round() as usize;
     let is_periodic = kind == 2;
     let is_quasi = kind == 1;
 
@@ -238,27 +283,29 @@ pub fn apply(
             // WAV.  A fixed crossfade (e.g. 0.5 s) makes `xf` large, the condition fails, and
             // `split_swap` runs on the **full** clip instead.  Only blend inside the candidate
             // when it covers almost the entire export buffer; otherwise reshape the full clip.
-            let candidate_covers_export =
-                sub_frames.saturating_mul(10) >= frames.saturating_mul(9);
+            let candidate_covers_export = sub_frames.saturating_mul(CANDIDATE_COVERS_EXPORT_DEN)
+                >= frames.saturating_mul(CANDIDATE_COVERS_EXPORT_NUM);
             if xf > 0 && xf * 2 < sub_frames && candidate_covers_export {
                 let tail_s = end.saturating_sub(xf).max(start);
                 let head_e = (start + xf).min(end);
                 let tail_m = &mono[tail_s..end];
                 let head_m = &mono[start..head_e];
                 let n = tail_m.len().min(head_m.len());
-                let r = if n > 8 {
+                let r = if n > MIN_CORR_ALIGN_FRAMES {
                     cross_correlation(&tail_m[tail_m.len() - n..], &head_m[..n])
                 } else {
                     0.0
                 };
 
-                if is_quasi && r < 0.75 {
+                if is_quasi && r < QUASI_PERIODIC_CORR_MIN {
                     spectral_blend::blend_seam_equal_power_long(&mut slice, ch, xf).map(|()| {
                         LoopResult {
                             samples: slice,
                             loop_start: 0,
                             loop_end: sub_frames.saturating_sub(1),
-                            technique: LoopTechnique::SpectralBlend { fft_size: 512 },
+                            technique: LoopTechnique::SpectralBlend {
+                                fft_size: MFCC_FFT_SIZE,
+                            },
                         }
                     })
                 } else {
@@ -300,7 +347,9 @@ pub fn apply(
 
     if !matches!(result.technique, LoopTechnique::Passthrough) {
         let out_frames = result.samples.len() / ch;
-        let ms = 64.min(out_frames.saturating_sub(4) / 4);
+        let ms = POST_LOOP_TRIM_MAX.min(
+            out_frames.saturating_sub(POST_LOOP_TRIM_FRAME_GAP) / POST_LOOP_TRIM_FRAME_GAP,
+        );
         if ms > 0 {
             result.samples = trim_loop_seam_alignment(&result.samples, ch, ms);
             let nf = result.samples.len() / ch;

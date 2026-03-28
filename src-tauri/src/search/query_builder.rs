@@ -3,6 +3,7 @@
 use rusqlite::types::Value;
 
 use crate::db::models::{SearchQuery, SortDirection, SortField};
+use crate::search::constants::FTS_MIN_QUERY_CHARS;
 
 /// Strip characters and tokens unsafe for FTS5 / our simplified query model.
 pub fn sanitize_fts_query(input: &str) -> String {
@@ -10,7 +11,7 @@ pub fn sanitize_fts_query(input: &str) -> String {
     for ch in input.chars() {
         match ch {
             '(' | ')' | ':' | '^' | '*' | '"' => s.push(' '),
-            c => s.push(c),
+            other => s.push(other),
         }
     }
     let mut out = s.to_lowercase();
@@ -78,8 +79,9 @@ pub fn build_search_sql(query: &SearchQuery) -> (String, Vec<Value>) {
     let mut params: Vec<Value> = Vec::new();
     let sanitized = sanitize_fts_query(&query.text);
     let trimmed = sanitized.trim();
-    let use_fts = !trimmed.is_empty() && trimmed.chars().count() >= 3;
-    let use_like = !trimmed.is_empty() && trimmed.chars().count() < 3;
+    let char_count = trimmed.chars().count();
+    let use_fts = !trimmed.is_empty() && char_count >= FTS_MIN_QUERY_CHARS;
+    let use_like = !trimmed.is_empty() && char_count < FTS_MIN_QUERY_CHARS;
 
     let mut sql = String::from(
         "SELECT a.id, a.path, a.filename, a.extension, a.folder, a.duration_ms, a.sample_rate, a.channels, a.bit_depth, a.file_size, a.category, a.publisher, a.favorite, a.rating, a.notes, a.play_count FROM assets a",
@@ -149,8 +151,9 @@ pub fn build_count_sql(query: &SearchQuery) -> (String, Vec<Value>) {
     let mut params: Vec<Value> = Vec::new();
     let sanitized = sanitize_fts_query(&query.text);
     let trimmed = sanitized.trim();
-    let use_fts = !trimmed.is_empty() && trimmed.chars().count() >= 3;
-    let use_like = !trimmed.is_empty() && trimmed.chars().count() < 3;
+    let char_count = trimmed.chars().count();
+    let use_fts = !trimmed.is_empty() && char_count >= FTS_MIN_QUERY_CHARS;
+    let use_like = !trimmed.is_empty() && char_count < FTS_MIN_QUERY_CHARS;
 
     let mut sql = String::from("SELECT COUNT(*) FROM assets a");
     if use_fts {

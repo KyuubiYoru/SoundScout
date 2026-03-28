@@ -11,6 +11,9 @@ pub const TEXT_EMBEDDING_MODEL_ID: &str = "text_minilm_l6_v2_ort";
 
 pub const EXPECTED_DIM: usize = 384;
 
+/// Batch size passed to [`TextEmbedding::embed`](fastembed::TextEmbedding::embed) (`Option<usize>`).
+pub const EMBED_BATCH_SIZE: usize = 32;
+
 pub fn expected_dim() -> usize {
     EXPECTED_DIM
 }
@@ -92,7 +95,7 @@ impl EmbedSession {
         }
         let vectors = self
             .model
-            .embed(texts.to_vec(), Some(32))
+            .embed(texts.to_vec(), Some(EMBED_BATCH_SIZE))
             .map_err(|e| SoundScoutError::Embedding(e.to_string()))?;
         validate_batch(&vectors, texts.len())?;
         Ok(vectors)
@@ -106,7 +109,7 @@ pub fn embed_batch(texts: &[String]) -> Result<Vec<Vec<f32>>, SoundScoutError> {
     }
     with_global_model(|model| {
         let vectors = model
-            .embed(texts.to_vec(), Some(32))
+            .embed(texts.to_vec(), Some(EMBED_BATCH_SIZE))
             .map_err(|e| SoundScoutError::Embedding(e.to_string()))?;
         validate_batch(&vectors, texts.len())?;
         Ok(vectors)

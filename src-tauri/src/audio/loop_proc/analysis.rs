@@ -6,6 +6,15 @@
 
 use realfft::RealFftPlanner;
 
+/// Minimum mono samples for autocorrelation classification.
+const MIN_SAMPLES_CLASSIFY: usize = 256;
+/// Upper frequency (Hz) for minimum lag search (`sample_rate / this`).
+const MIN_LAG_MAX_FREQ_HZ: usize = 2000;
+/// Autocorrelation peak above this → periodic (`kind == 2`).
+const PERIODIC_ACF_THRESHOLD: f32 = 0.7;
+/// Between this and `PERIODIC_ACF_THRESHOLD` → quasi-periodic (`kind == 1`).
+const QUASI_ACF_THRESHOLD: f32 = 0.4;
+
 /// FFT autocorrelation r[τ] normalised by r[0], length = input.len() (real part truncated).
 pub fn fft_autocorrelation(samples: &[f32]) -> Result<Vec<f32>, String> {
     if samples.is_empty() {
@@ -63,14 +72,14 @@ pub fn amdf(samples: &[f32], max_lag: usize) -> Vec<f32> {
 /// Classify using autocorrelation on `mono` (one sample per frame).
 /// Returns `(peak_correlation, estimated_hz, kind)` where `kind`: 0 = aperiodic, 1 = quasi, 2 = periodic.
 pub fn classify_mono(mono: &[f32], sample_rate: u32) -> (f32, f32, u8) {
-    if mono.len() < 256 {
+    if mono.len() < MIN_SAMPLES_CLASSIFY {
         return (0.0, 0.0, 0);
     }
     let start = mono.len() / 4;
     let end = mono.len() * 3 / 4;
     let region = &mono[start..end];
     let acf = fft_autocorrelation(region).unwrap_or_default();
-    let min_lag = (sample_rate as usize / 2000).max(2);
+    let min_lag = (sample_rate as usize / MIN_LAG_MAX_FREQ_HZ).max(2);
     let max_lag = (acf.len().min(region.len()) - 1).max(min_lag + 1);
     if max_lag <= min_lag {
         return (0.0, 0.0, 0);
@@ -86,9 +95,9 @@ pub fn classify_mono(mono: &[f32], sample_rate: u32) -> (f32, f32, u8) {
         }
     }
     let hz = sample_rate as f32 / best_lag as f32;
-    let kind = if best_val > 0.7 {
+    let kind = if best_val > PERIODIC_ACF_THRESHOLD {
         2u8
-    } else if best_val > 0.4 {
+    } else if best_val > QUASI_ACF_THRESHOLD {
         1u8
     } else {
         0u8

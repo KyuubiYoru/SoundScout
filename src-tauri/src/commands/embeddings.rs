@@ -8,10 +8,8 @@ use crate::commands::state::AppState;
 use crate::db::connection::DbPool;
 use crate::db::models::{EmbedRebuildComplete, EmbedRebuildProgress};
 use crate::db::queries;
-use crate::embedding::{EmbedSession, TEXT_EMBEDDING_MODEL_ID};
+use crate::embedding::{EmbedSession, EMBED_BATCH_SIZE, TEXT_EMBEDDING_MODEL_ID};
 use crate::search::text_doc;
-
-const BATCH: usize = 32;
 
 #[tauri::command]
 pub async fn rebuild_text_embeddings(app: AppHandle, state: State<'_, AppState>) -> Result<u32, String> {
@@ -50,7 +48,7 @@ fn rebuild_blocking(pool: &DbPool, app: AppHandle) -> Result<u32, String> {
         },
     );
 
-    for chunk in ids.chunks(BATCH) {
+    for chunk in ids.chunks(EMBED_BATCH_SIZE) {
         let mut texts = Vec::new();
         let mut chunk_ids = Vec::new();
         for &id in chunk {

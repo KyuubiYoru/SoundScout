@@ -83,6 +83,9 @@ pub enum SearchMode {
     Both,
 }
 
+/// Default page size for search queries (`limit` when not overridden).
+pub const DEFAULT_SEARCH_LIMIT: u32 = 50;
+
 /// Search filters and pagination.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -111,7 +114,7 @@ pub struct SearchQuery {
 }
 
 fn default_limit() -> u32 {
-    50
+    DEFAULT_SEARCH_LIMIT
 }
 
 impl Default for SearchQuery {
@@ -130,7 +133,7 @@ impl Default for SearchQuery {
             sort_by: SortField::default(),
             sort_dir: SortDirection::default(),
             offset: 0,
-            limit: 50,
+            limit: DEFAULT_SEARCH_LIMIT,
         }
     }
 }

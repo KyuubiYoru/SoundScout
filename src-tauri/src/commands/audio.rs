@@ -18,6 +18,10 @@ pub const EVT_PCM_STREAM_CHUNK: &str = "pcm-stream-chunk";
 /// Emitted when decode finished (all chunk files were sent).
 pub const EVT_PCM_STREAM_FINISHED: &str = "pcm-stream-finished";
 
+/// Wait for first PCM chunk after starting background decode (slow disks / large files).
+const PCM_STREAM_FIRST_CHUNK_TIMEOUT_SEC: u64 = 120;
+const MILLISECONDS_PER_SECOND_F64: f64 = 1000.0;
+
 static PCM_STREAM_SEQ: AtomicU64 = AtomicU64::new(1);
 
 /// On Linux (X11/Wayland), clipboard payloads are served by the app that owns [`Clipboard`]; dropping it clears the clip for other apps. Keep one alive until the next copy.
@@ -155,13 +159,16 @@ pub async fn start_pcm_stream(
         let _ = pcm_stream::run_pcm_stream(path_for_task, stream_id, cancel_task, tx);
     });
 
-    let first = tokio::time::timeout(std::time::Duration::from_secs(120), rx.recv())
+    let first = tokio::time::timeout(
+        std::time::Duration::from_secs(PCM_STREAM_FIRST_CHUNK_TIMEOUT_SEC),
+        rx.recv(),
+    )
         .await
         .map_err(|_| "pcm stream decode timeout".to_string())?
         .ok_or_else(|| "pcm stream produced no audio".to_string())?;
 
     let duration_sec = duration_ms
-        .map(|ms| (ms as f64) / 1000.0)
+        .map(|ms| (ms as f64) / MILLISECONDS_PER_SECOND_F64)
         .filter(|d| d.is_finite() && *d > 0.0)
         .unwrap_or(0.0);
 

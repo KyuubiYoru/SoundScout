@@ -2,4 +2,6 @@
 
 mod session;
 
-pub use session::{embed_batch, expected_dim, EmbedSession, TEXT_EMBEDDING_MODEL_ID};
+pub use session::{
+    embed_batch, expected_dim, EmbedSession, EMBED_BATCH_SIZE, TEXT_EMBEDDING_MODEL_ID,
+};

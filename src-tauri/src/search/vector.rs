@@ -9,7 +9,26 @@ use crate::db::models::{Asset, SearchQuery, SearchResults, SortDirection, SortFi
 use crate::db::queries;
 use crate::embedding;
 use crate::error::SoundScoutError;
+use crate::search::constants::FTS_MIN_QUERY_CHARS;
 use crate::search::query_builder::{filter_suffix, sanitize_fts_query};
+
+/// Hybrid fusion: weight on vector branch (cosine on L2-normalized embeddings, mapped to \[0, 1\]).
+const HYBRID_WEIGHT_VECTOR: f32 = 0.65;
+/// Hybrid fusion: weight on lexical branch (BM25 when FTS applies, or 1.0 for `LIKE` hits).
+const HYBRID_WEIGHT_LEXICAL: f32 = 0.35;
+
+/// Treat near-zero L2 norm as degenerate (avoid division by zero).
+const L2_NORM_EPS: f32 = 1e-8;
+/// Near-zero BM25 spread: avoid division by zero when normalizing scores.
+const BM25_SPREAD_EPS: f32 = 1e-8;
+
+/// Cosine similarity for unit vectors lies in \[-1, 1\]; map linearly to \[0, 1\] for fusion with lexical quality in \[0, 1\].
+#[inline]
+fn unit_interval_from_cosine_similarity(sim: f32) -> f32 {
+    const COSINE_MIN: f32 = -1.0;
+    const COSINE_MAX: f32 = 1.0;
+    ((sim - COSINE_MIN) / (COSINE_MAX - COSINE_MIN)).clamp(0.0, 1.0)
+}
 
 fn row_to_asset(row: &Row<'_>) -> Result<Asset, rusqlite::Error> {
     Ok(Asset {
@@ -40,7 +59,7 @@ fn blob_to_f32(blob: &[u8]) -> Result<Vec<f32>, SoundScoutError> {
 
 fn l2_normalize(v: &mut [f32]) {
     let s: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if s > 1e-8 {
+    if s > L2_NORM_EPS {
         for x in v.iter_mut() {
             *x /= s;
         }
@@ -54,7 +73,7 @@ fn load_fts_bm25(
     use_fts: bool,
     use_like: bool,
 ) -> Result<HashMap<i64, f32>, SoundScoutError> {
-    let mut m = HashMap::new();
+    let mut bm25_by_asset_id = HashMap::new();
     let (filt_sql, filt_params) = filter_suffix(query);
     if use_fts {
         let mut sql = String::from(
@@ -70,7 +89,7 @@ fn load_fts_bm25(
         while let Some(row) = rows.next().map_err(SoundScoutError::Database)? {
             let id: i64 = row.get(0).map_err(SoundScoutError::Database)?;
             let bm: f64 = row.get(1).map_err(SoundScoutError::Database)?;
-            m.insert(id, bm as f32);
+            bm25_by_asset_id.insert(id, bm as f32);
         }
     } else if use_like {
         let mut sql = String::from("SELECT a.id FROM assets a WHERE a.filename LIKE ?");
@@ -83,10 +102,10 @@ fn load_fts_bm25(
             .map_err(SoundScoutError::Database)?;
         while let Some(row) = rows.next().map_err(SoundScoutError::Database)? {
             let id: i64 = row.get(0).map_err(SoundScoutError::Database)?;
-            m.insert(id, 0.0f32);
+            bm25_by_asset_id.insert(id, 0.0f32);
         }
     }
-    Ok(m)
+    Ok(bm25_by_asset_id)
 }
 
 fn fts_quality_for_id(
@@ -102,11 +121,11 @@ fn fts_quality_for_id(
     if use_like_hits {
         return 1.0;
     }
-    if (max_bm - min_bm).abs() < 1e-8 {
+    if (max_bm - min_bm).abs() < BM25_SPREAD_EPS {
         return 1.0;
     }
     // bm25 lower is better → higher quality when closer to min_bm
-    (max_bm - bm) / (max_bm - min_bm + 1e-8)
+    (max_bm - bm) / (max_bm - min_bm + BM25_SPREAD_EPS)
 }
 
 fn sort_scored(scored: &mut [(Asset, f32)], query: &SearchQuery) {
@@ -201,12 +220,13 @@ pub fn execute_search_vector(conn: &Connection, query: &SearchQuery) -> Result<S
     })
 }
 
-/// Weighted merge of vector similarity and lexical FTS / LIKE (35% / 65% vector-first).
+/// Weighted merge: **65%** normalized vector cosine similarity **+ 35%** lexical quality (BM25 when FTS applies, or `LIKE` hit quality).
 pub fn execute_search_hybrid(conn: &Connection, query: &SearchQuery) -> Result<SearchResults, SoundScoutError> {
     let sanitized = sanitize_fts_query(&query.text);
     let trimmed = sanitized.trim();
-    let use_fts = !trimmed.is_empty() && trimmed.chars().count() >= 3;
-    let use_like = !trimmed.is_empty() && trimmed.chars().count() < 3;
+    let char_count = trimmed.chars().count();
+    let use_fts = !trimmed.is_empty() && char_count >= FTS_MIN_QUERY_CHARS;
+    let use_like = !trimmed.is_empty() && char_count < FTS_MIN_QUERY_CHARS;
 
     if queries::count_embeddings(conn)? == 0 {
         return Ok(SearchResults {
@@ -241,9 +261,6 @@ pub fn execute_search_hybrid(conn: &Connection, query: &SearchQuery) -> Result<S
         .query(rusqlite::params_from_iter(params))
         .map_err(SoundScoutError::Database)?;
 
-    const W_VEC: f32 = 0.65;
-    const W_FTS: f32 = 0.35;
-
     let mut scored: Vec<(Asset, f32)> = Vec::new();
     while let Some(row) = rows.next().map_err(SoundScoutError::Database)? {
         let asset = row_to_asset(&row).map_err(SoundScoutError::Database)?;
@@ -251,9 +268,9 @@ pub fn execute_search_hybrid(conn: &Connection, query: &SearchQuery) -> Result<S
         let mut v = blob_to_f32(&blob)?;
         l2_normalize(&mut v);
         let sim: f32 = qv.iter().zip(v.iter()).map(|(x, y)| x * y).sum();
-        let vec_n = ((sim + 1.0) * 0.5).clamp(0.0, 1.0);
+        let vec_n = unit_interval_from_cosine_similarity(sim);
         let fts_n = fts_quality_for_id(asset.id, &fts_bm, min_bm, max_bm, use_like && !use_fts);
-        let combined = W_VEC * vec_n + W_FTS * fts_n;
+        let combined = HYBRID_WEIGHT_VECTOR * vec_n + HYBRID_WEIGHT_LEXICAL * fts_n;
         scored.push((asset, combined));
     }
 
