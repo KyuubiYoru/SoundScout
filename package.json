@@ -1,0 +1,39 @@
+{
+  "name": "soundscout",
+  "version": "0.1.0",
+  "description": "SoundScout — search and export game audio SFX",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "profile:decode": "cargo run --manifest-path src-tauri/Cargo.toml --bin profile_decode --",
+    "test:profile-wav": "cargo test --manifest-path src-tauri/Cargo.toml --test playback_profile profile_real_file_if_env_set -- --ignored --nocapture",
+    "tauri": "tauri",
+    "release": "tauri build",
+    "release:linux": "tauri build --target x86_64-unknown-linux-gnu",
+    "release:windows": "tauri build --target x86_64-pc-windows-msvc",
+    "appimage:repair-appdir": "bash scripts/repair-appdir-for-appimage.sh src-tauri/target/release/bundle/appimage/SoundScout.AppDir"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@tauri-apps/api": "^2"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-static": "^3.0.6",
+    "@sveltejs/kit": "^2.9.0",
+    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "@testing-library/svelte": "^5.2.8",
+    "jsdom": "^26.0.0",
+    "svelte": "^5.0.0",
+    "svelte-check": "^4.0.0",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3",
+    "vitest": "^3.0.0",
+    "@tauri-apps/cli": "^2"
+  }
+}

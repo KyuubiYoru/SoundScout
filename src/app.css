@@ -1,0 +1,103 @@
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap");
+
+:root {
+  color-scheme: dark;
+  --bg-base: #0d0f11;
+  --bg-surface: #151820;
+  --bg-elevated: #1c2028;
+  --bg-input: #1a1e26;
+  --border: #2a2f3a;
+  --border-focus: #4a90d9;
+  --text-primary: #e2e4e8;
+  --text-secondary: #8b8f98;
+  --text-muted: #555962;
+  --accent: #4a90d9;
+  --accent-hover: #5a9ee6;
+  --favorite: #e8b339;
+  --error: #d94a4a;
+  --success: #4ad97a;
+  --info: #4a90d9;
+  --badge-wav: #4a90d9;
+  --badge-flac: #4ad97a;
+  --badge-mp3: #d9914a;
+  --badge-ogg: #9a4ad9;
+  --badge-aiff: #d94a7a;
+  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+  --font-size-sm: 12px;
+  --font-size-base: 13px;
+  --font-size-lg: 15px;
+  --font-size-xl: 18px;
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+  --row-height: 56px;
+  --sidebar-width: 260px;
+  --player-height: 136px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-base);
+  overflow: hidden;
+  user-select: none;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-base);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+input,
+button,
+select {
+  font-family: var(--font-mono);
+}
+
+/* Native <select> on WebKit/Tauri often picks a light shell; force theme colors. */
+select {
+  font-size: inherit;
+  color: var(--text-primary);
+  background-color: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 28px 4px 8px;
+  min-height: 28px;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='none' stroke='%238b8f98' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' d='M1.5 2L6 6l4.5-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+
+select:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
+option,
+optgroup {
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+}
