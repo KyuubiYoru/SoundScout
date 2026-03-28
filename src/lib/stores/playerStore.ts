@@ -40,12 +40,12 @@ function trimPcmDecodeCache() {
 
 /** LRU: refresh slot on hit. */
 function pcmDecodeCacheGet(assetId: number): PcmCacheEntry | undefined {
-  const e = pcmDecodeCache.get(assetId);
-  if (!e) return undefined;
+  const cached = pcmDecodeCache.get(assetId);
+  if (!cached) return undefined;
   const i = pcmDecodeOrder.indexOf(assetId);
   if (i >= 0) pcmDecodeOrder.splice(i, 1);
   pcmDecodeOrder.push(assetId);
-  return e;
+  return cached;
 }
 
 function pcmDecodeCachePut(assetId: number, entry: PcmCacheEntry) {
@@ -146,17 +146,17 @@ function clampClipToDuration(
 }
 
 function enforceClipBounds() {
-  const s = get(state);
-  if (s.previewActive) return;
-  const clip = s.clipRange;
+  const snapshot = get(state);
+  if (snapshot.previewActive) return;
+  const clip = snapshot.clipRange;
   if (!clip || !hybrid.isPlaying) return;
   const loopOn = get(settingsStore).playback.loop_playback;
-  const t = hybrid.currentTime;
-  if (t < clip.start) {
+  const playheadTime = hybrid.currentTime;
+  if (playheadTime < clip.start) {
     hybrid.seek(clip.start);
     return;
   }
-  if (t >= clip.end - 0.0015) {
+  if (playheadTime >= clip.end - 0.0015) {
     if (loopOn) {
       hybrid.seek(clip.start);
     } else {
@@ -164,7 +164,7 @@ function enforceClipBounds() {
       hybrid.seek(Math.min(clip.end, hybrid.duration || clip.end));
       if (raf) cancelAnimationFrame(raf);
       raf = null;
-      state.update((s) => ({ ...s, isPlaying: false, currentTime: hybrid.currentTime }));
+      state.update((prev) => ({ ...prev, isPlaying: false, currentTime: hybrid.currentTime }));
     }
   }
 }
@@ -173,15 +173,15 @@ function tick() {
   if (hybrid.isPlaying) {
     enforceClipBounds();
   }
-  const s = get(state);
+  const snapshot = get(state);
   const dur =
     hybrid.duration > 0
       ? hybrid.duration
-      : s.currentAsset?.durationMs != null
-        ? s.currentAsset.durationMs / 1000
-        : s.duration;
-  let nextClip: (typeof s)["clipRange"] = s.clipRange;
-  if (nextClip && dur > 0 && !s.previewActive) {
+      : snapshot.currentAsset?.durationMs != null
+        ? snapshot.currentAsset.durationMs / 1000
+        : snapshot.duration;
+  let nextClip: (typeof snapshot)["clipRange"] = snapshot.clipRange;
+  if (nextClip && dur > 0 && !snapshot.previewActive) {
     const clamped = clampClipToDuration(nextClip, dur);
     if (clamped == null) {
       nextClip = null;
@@ -190,8 +190,8 @@ function tick() {
       nextClip = clamped;
     }
   }
-  state.update((x) => ({
-    ...x,
+  state.update((prev) => ({
+    ...prev,
     clipRange: nextClip,
     currentTime: hybrid.currentTime,
     duration: dur,
@@ -208,7 +208,9 @@ function queuePeaks(assetId: number) {
   void ipc
     .getPeaks(assetId)
     .then((peaks) => {
-      state.update((s) => (s.currentAsset?.id === assetId ? { ...s, peaks } : s));
+      state.update((prev) =>
+        prev.currentAsset?.id === assetId ? { ...prev, peaks } : prev,
+      );
     })
     .catch(() => {});
 }
@@ -218,10 +220,10 @@ function syncHybridLoopFromSettings(): void {
 }
 
 async function seekInternal(position: number): Promise<void> {
-  const s = get(state);
-  const asset = s.currentAsset;
+  const snapshot = get(state);
+  const asset = snapshot.currentAsset;
   if (hybrid.mode === "pcm_stream" && asset) {
-    const wasPlaying = s.isPlaying;
+    const wasPlaying = snapshot.isPlaying;
     await teardownPcmStreamPlayback();
     hybrid.stop();
     try {
@@ -229,8 +231,8 @@ async function seekInternal(position: number): Promise<void> {
       hybrid.loadPcm(ab, sr, ch);
       applyHybridVolume();
       hybrid.seek(position);
-      state.update((x) => ({
-        ...x,
+      state.update((prev) => ({
+        ...prev,
         currentTime: hybrid.currentTime,
         duration: hybrid.duration,
       }));
@@ -238,24 +240,24 @@ async function seekInternal(position: number): Promise<void> {
       if (wasPlaying) {
         await hybrid.play();
         tick();
-        state.update((x) => ({ ...x, isPlaying: true }));
+        state.update((prev) => ({ ...prev, isPlaying: true }));
       }
-    } catch (e) {
-      toastStore.show(String(e), "error");
+    } catch (err) {
+      toastStore.show(String(err), "error");
     }
     return;
   }
   hybrid.seek(position);
-  state.update((st) => ({ ...st, currentTime: hybrid.currentTime }));
+  state.update((prev) => ({ ...prev, currentTime: hybrid.currentTime }));
 }
 
 async function clampPlayheadIntoClipIfNeeded(): Promise<void> {
-  const s = get(state);
-  if (s.previewActive) return;
-  const clip = s.clipRange;
+  const snapshot = get(state);
+  if (snapshot.previewActive) return;
+  const clip = snapshot.clipRange;
   if (!clip) return;
-  const t = hybrid.currentTime;
-  if (t < clip.start || t >= clip.end) {
+  const playheadTime = hybrid.currentTime;
+  if (playheadTime < clip.start || playheadTime >= clip.end) {
     await seekInternal(clip.start);
   }
 }
@@ -280,19 +282,19 @@ export function getPlayerState(): {
 }
 
 export function getAudioExportCopyArgs(): AudioExportCopyArgs | null {
-  const s = get(state);
-  const a = s.currentAsset;
-  if (!a) return null;
-  if (s.clipRange) {
-    return { isClip: true, startSec: s.clipRange.start, endSec: s.clipRange.end };
+  const snapshot = get(state);
+  const asset = snapshot.currentAsset;
+  if (!asset) return null;
+  if (snapshot.clipRange) {
+    return { isClip: true, startSec: snapshot.clipRange.start, endSec: snapshot.clipRange.end };
   }
   const dur =
     hybrid.duration > 0
       ? hybrid.duration
-      : Number.isFinite(s.duration) && s.duration > 0
-        ? s.duration
-        : a.durationMs != null && a.durationMs > 0
-          ? a.durationMs / 1000
+      : Number.isFinite(snapshot.duration) && snapshot.duration > 0
+        ? snapshot.duration
+        : asset.durationMs != null && asset.durationMs > 0
+          ? asset.durationMs / 1000
           : 0;
   if (dur <= 0) return null;
   return { isClip: false, startSec: 0, endSec: dur };
@@ -307,34 +309,34 @@ export const playerStore = {
     await settingsStore.save();
   },
   async commitClipRange(start: number, end: number) {
-    const s = get(state);
-    const d =
+    const snapshot = get(state);
+    const durationSec =
       hybrid.duration > 0
         ? hybrid.duration
-        : s.currentAsset?.durationMs != null
-          ? s.currentAsset.durationMs / 1000
-          : s.duration;
-    if (d <= 0) return;
-    const lo = Math.max(0, Math.min(start, end, d));
-    const hi = Math.max(lo + CLIP_MIN_SEC, Math.min(Math.max(start, end), d));
-    state.update((x) => ({ ...x, clipRange: { start: lo, end: hi } }));
+        : snapshot.currentAsset?.durationMs != null
+          ? snapshot.currentAsset.durationMs / 1000
+          : snapshot.duration;
+    if (durationSec <= 0) return;
+    const lo = Math.max(0, Math.min(start, end, durationSec));
+    const hi = Math.max(lo + CLIP_MIN_SEC, Math.min(Math.max(start, end), durationSec));
+    state.update((prev) => ({ ...prev, clipRange: { start: lo, end: hi } }));
     syncHybridLoopFromSettings();
     await seekInternal(lo);
   },
   clearClipRange() {
-    state.update((x) => ({ ...x, clipRange: null }));
+    state.update((prev) => ({ ...prev, clipRange: null }));
     syncHybridLoopFromSettings();
   },
   async playAsset(asset: Asset, opts?: { preserveClip?: boolean }) {
     try {
       await teardownPcmStreamPlayback();
       const preserveClip = opts?.preserveClip ?? false;
-      state.update((s) => ({
-        ...s,
+      state.update((prev) => ({
+        ...prev,
         previewActive: false,
         previewLoading: false,
         previewPeaksOverride: null,
-        clipRange: preserveClip ? s.clipRange : null,
+        clipRange: preserveClip ? prev.clipRange : null,
       }));
       syncHybridLoopFromSettings();
 
@@ -348,8 +350,8 @@ export const playerStore = {
               : hybrid.duration > 0
                 ? hybrid.duration
                 : 0;
-          state.update((s) => ({
-            ...s,
+          state.update((prev) => ({
+            ...prev,
             currentAsset: asset,
             duration: durGuess,
             peaks: [],
@@ -406,8 +408,8 @@ export const playerStore = {
               : hybrid.duration > 0
                 ? hybrid.duration
                 : 0;
-        state.update((s) => ({
-          ...s,
+        state.update((prev) => ({
+          ...prev,
           currentAsset: asset,
           duration: durGuess,
           peaks: [],
@@ -423,8 +425,8 @@ export const playerStore = {
       const { ab, sr, ch } = await loadFullPcmForAsset(asset);
       hybrid.loadPcm(ab, sr, ch);
       applyHybridVolume();
-      state.update((s) => ({
-        ...s,
+      state.update((prev) => ({
+        ...prev,
         currentAsset: asset,
         duration: hybrid.duration,
         peaks: [],
@@ -434,20 +436,20 @@ export const playerStore = {
       queuePeaks(asset.id);
       await hybrid.play();
       tick();
-    } catch (e) {
-      toastStore.show(String(e), "error");
+    } catch (err) {
+      toastStore.show(String(err), "error");
     }
   },
 
   setVolume(v: number): void {
-    const g = Math.max(0, Math.min(1, v));
-    hybrid.setVolume(g);
-    state.update((s) => ({ ...s, volume: g }));
+    const clampedGain = Math.max(0, Math.min(1, v));
+    hybrid.setVolume(clampedGain);
+    state.update((prev) => ({ ...prev, volume: clampedGain }));
   },
 
   async previewProcessed(config: PostProcessConfig): Promise<void> {
-    const s = get(state);
-    const asset = s.currentAsset;
+    const snapshot = get(state);
+    const asset = snapshot.currentAsset;
     const args = getAudioExportCopyArgs();
     if (!asset || !args) {
       toastStore.show("Nothing to preview", "error");
@@ -455,7 +457,7 @@ export const playerStore = {
     }
     previewGeneration += 1;
     const gen = previewGeneration;
-    state.update((x) => ({ ...x, previewLoading: true }));
+    state.update((prev) => ({ ...prev, previewLoading: true }));
     try {
       const meta = await ipc.getProcessedPcmFile(
         asset.id,
@@ -476,22 +478,22 @@ export const playerStore = {
       hybrid.loadPcm(ab, sr, ch);
       applyHybridVolume();
       hybrid.setLoopPolicy(true, false);
-      const st = get(state);
+      const peakSource = get(state);
       let previewPeaks: number[] | null = null;
-      if (args.isClip && st.clipRange && st.peaks.length > 0) {
+      if (args.isClip && peakSource.clipRange && peakSource.peaks.length > 0) {
         const fileDurSec =
           asset.durationMs != null && asset.durationMs > 0
             ? asset.durationMs / 1000
-            : Math.max(st.clipRange.end, st.duration || 0, hybrid.duration || 0);
+            : Math.max(peakSource.clipRange.end, peakSource.duration || 0, hybrid.duration || 0);
         previewPeaks = slicePeaksForTimeRange(
-          st.peaks,
+          peakSource.peaks,
           fileDurSec,
-          st.clipRange.start,
-          st.clipRange.end,
+          peakSource.clipRange.start,
+          peakSource.clipRange.end,
         );
       }
-      state.update((x) => ({
-        ...x,
+      state.update((prev) => ({
+        ...prev,
         duration: hybrid.duration,
         currentTime: 0,
         previewActive: true,
@@ -500,24 +502,24 @@ export const playerStore = {
       }));
       await hybrid.play();
       tick();
-      state.update((x) => ({ ...x, isPlaying: true }));
-    } catch (e) {
+      state.update((prev) => ({ ...prev, isPlaying: true }));
+    } catch (err) {
       if (gen === previewGeneration) {
-        state.update((x) => ({
-          ...x,
+        state.update((prev) => ({
+          ...prev,
           previewLoading: false,
           previewActive: false,
           previewPeaksOverride: null,
         }));
-        toastStore.show(String(e), "error");
+        toastStore.show(String(err), "error");
       }
     }
   },
 
   async stopPreview(): Promise<void> {
     previewGeneration += 1;
-    state.update((s) => ({
-      ...s,
+    state.update((prev) => ({
+      ...prev,
       previewActive: false,
       previewLoading: false,
       previewPeaksOverride: null,
@@ -527,7 +529,7 @@ export const playerStore = {
   },
   pause() {
     hybrid.pause();
-    state.update((s) => ({ ...s, isPlaying: false, currentTime: hybrid.currentTime }));
+    state.update((prev) => ({ ...prev, isPlaying: false, currentTime: hybrid.currentTime }));
     if (raf) cancelAnimationFrame(raf);
     raf = null;
   },
@@ -535,7 +537,7 @@ export const playerStore = {
     await clampPlayheadIntoClipIfNeeded();
     await hybrid.play();
     tick();
-    state.update((s) => ({ ...s, isPlaying: true }));
+    state.update((prev) => ({ ...prev, isPlaying: true }));
   },
   async seek(position: number) {
     await seekInternal(position);
@@ -545,8 +547,8 @@ export const playerStore = {
     hybrid.stop();
     if (raf) cancelAnimationFrame(raf);
     raf = null;
-    state.update((s) => ({
-      ...s,
+    state.update((prev) => ({
+      ...prev,
       isPlaying: false,
       currentTime: 0,
       currentAsset: null,
@@ -558,21 +560,21 @@ export const playerStore = {
     }));
   },
   async toggle() {
-    const s = get(state);
-    if (!s.currentAsset) return;
+    const snapshot = get(state);
+    if (!snapshot.currentAsset) return;
     if (hybrid.isPlaying) {
       hybrid.pause();
       if (raf) cancelAnimationFrame(raf);
       raf = null;
-      state.update((x) => ({ ...x, isPlaying: false, currentTime: hybrid.currentTime }));
+      state.update((prev) => ({ ...prev, isPlaying: false, currentTime: hybrid.currentTime }));
     } else {
       try {
         await clampPlayheadIntoClipIfNeeded();
         await hybrid.play();
         tick();
-        state.update((x) => ({ ...x, isPlaying: true }));
-      } catch (e) {
-        toastStore.show(String(e), "error");
+        state.update((prev) => ({ ...prev, isPlaying: true }));
+      } catch (err) {
+        toastStore.show(String(err), "error");
       }
     }
   },

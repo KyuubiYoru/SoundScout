@@ -45,16 +45,16 @@
     return out;
   }
 
-  /** Linear interpolation; `t` in [0,1] across the full envelope. */
-  function sampleEnvelope(env: Float32Array, t: number): number {
-    const n = env.length;
-    if (n === 0) return 0;
-    if (n === 1) return env[0];
-    const x = Math.max(0, Math.min(1, t)) * (n - 1);
+  /** Linear interpolation; `normalizedT` in [0,1] across the full envelope. */
+  function sampleEnvelope(env: Float32Array, normalizedT: number): number {
+    const envLen = env.length;
+    if (envLen === 0) return 0;
+    if (envLen === 1) return env[0];
+    const x = Math.max(0, Math.min(1, normalizedT)) * (envLen - 1);
     const i0 = Math.floor(x);
-    const i1 = Math.min(n - 1, i0 + 1);
-    const f = x - i0;
-    return env[i0] * (1 - f) + env[i1] * f;
+    const i1 = Math.min(envLen - 1, i0 + 1);
+    const blendFactor = x - i0;
+    return env[i0] * (1 - blendFactor) + env[i1] * blendFactor;
   }
 
   function timeFromClientX(clientX: number, el: HTMLCanvasElement): number {
@@ -64,108 +64,108 @@
     return ratio * duration;
   }
 
-  function onPointerDown(e: PointerEvent) {
-    if (!seekable || e.button !== 0) return;
-    const c = canvas;
-    if (!c) return;
-    if (e.shiftKey && clipSelectable) {
+  function onPointerDown(event: PointerEvent) {
+    if (!seekable || event.button !== 0) return;
+    const canvasEl = canvas;
+    if (!canvasEl) return;
+    if (event.shiftKey && clipSelectable) {
       try {
-        c.setPointerCapture(e.pointerId);
+        canvasEl.setPointerCapture(event.pointerId);
       } catch {
         /* capture may fail */
       }
-      selectPointerId = e.pointerId;
-      selectAnchor = timeFromClientX(e.clientX, c);
+      selectPointerId = event.pointerId;
+      selectAnchor = timeFromClientX(event.clientX, canvasEl);
       selectCurrent = selectAnchor;
       return;
     }
     try {
-      c.setPointerCapture(e.pointerId);
+      canvasEl.setPointerCapture(event.pointerId);
     } catch {
       /* capture may fail in edge cases */
     }
-    scrubPointerId = e.pointerId;
-    scrubTime = timeFromClientX(e.clientX, c);
+    scrubPointerId = event.pointerId;
+    scrubTime = timeFromClientX(event.clientX, canvasEl);
   }
 
-  function onPointerMove(e: PointerEvent) {
-    const c = canvas;
-    if (!c) return;
-    if (e.pointerId === selectPointerId && selectAnchor != null) {
-      selectCurrent = timeFromClientX(e.clientX, c);
+  function onPointerMove(event: PointerEvent) {
+    const canvasEl = canvas;
+    if (!canvasEl) return;
+    if (event.pointerId === selectPointerId && selectAnchor != null) {
+      selectCurrent = timeFromClientX(event.clientX, canvasEl);
       return;
     }
-    if (e.pointerId !== scrubPointerId) return;
-    scrubTime = timeFromClientX(e.clientX, c);
+    if (event.pointerId !== scrubPointerId) return;
+    scrubTime = timeFromClientX(event.clientX, canvasEl);
   }
 
-  function endSelect(e: PointerEvent) {
-    if (e.pointerId !== selectPointerId) return;
-    const c = canvas;
-    if (c) {
+  function endSelect(event: PointerEvent) {
+    if (event.pointerId !== selectPointerId) return;
+    const canvasEl = canvas;
+    if (canvasEl) {
       try {
-        c.releasePointerCapture(e.pointerId);
+        canvasEl.releasePointerCapture(event.pointerId);
       } catch {
         /* already released */
       }
     }
-    const a = selectAnchor;
-    const b = selectCurrent;
+    const anchorSec = selectAnchor;
+    const currentSec = selectCurrent;
     selectPointerId = null;
     selectAnchor = null;
     selectCurrent = null;
-    if (a == null || b == null || !onClipChange) return;
-    const lo = Math.min(a, b);
-    const hi = Math.max(a, b);
+    if (anchorSec == null || currentSec == null || !onClipChange) return;
+    const lo = Math.min(anchorSec, currentSec);
+    const hi = Math.max(anchorSec, currentSec);
     if (hi - lo < CLIP_MIN_SEC) return;
     void Promise.resolve(onClipChange(lo, hi));
   }
 
-  function endScrub(e: PointerEvent) {
-    if (e.pointerId !== scrubPointerId) return;
-    const c = canvas;
-    if (c) {
+  function endScrub(event: PointerEvent) {
+    if (event.pointerId !== scrubPointerId) return;
+    const canvasEl = canvas;
+    if (canvasEl) {
       try {
-        c.releasePointerCapture(e.pointerId);
+        canvasEl.releasePointerCapture(event.pointerId);
       } catch {
         /* already released */
       }
     }
-    const t = scrubTime;
+    const committedTime = scrubTime;
     scrubPointerId = null;
     scrubTime = null;
-    if (t != null && seekable && onSeek) {
-      onSeek(Math.max(0, Math.min(duration, t)));
+    if (committedTime != null && seekable && onSeek) {
+      onSeek(Math.max(0, Math.min(duration, committedTime)));
     }
   }
 
-  function onPointerUp(e: PointerEvent) {
-    if (e.pointerId === selectPointerId) {
-      endSelect(e);
+  function onPointerUp(event: PointerEvent) {
+    if (event.pointerId === selectPointerId) {
+      endSelect(event);
       return;
     }
-    endScrub(e);
+    endScrub(event);
   }
 
-  function onPointerCancel(e: PointerEvent) {
-    endSelect(e);
-    endScrub(e);
+  function onPointerCancel(event: PointerEvent) {
+    endSelect(event);
+    endScrub(event);
   }
 
   function draw() {
-    const c = canvas;
+    const canvasEl = canvas;
     const wrap = wrapEl;
-    if (!c || !wrap) return;
-    const ctx = c.getContext("2d");
+    if (!canvasEl || !wrap) return;
+    const ctx = canvasEl.getContext("2d");
     if (!ctx) return;
 
     const dpr = Math.min(2.5, typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1);
     const cssW = Math.max(280, Math.floor(wrap.clientWidth));
     const cssH = 80;
-    c.width = Math.floor(cssW * dpr);
-    c.height = Math.floor(cssH * dpr);
-    c.style.width = `${cssW}px`;
-    c.style.height = `${cssH}px`;
+    canvasEl.width = Math.floor(cssW * dpr);
+    canvasEl.height = Math.floor(cssH * dpr);
+    canvasEl.style.width = `${cssW}px`;
+    canvasEl.style.height = `${cssH}px`;
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const w = cssW;
@@ -179,9 +179,9 @@
         const mid = h / 2;
         ctx.fillStyle = "rgba(74, 144, 217, 0.45)";
         for (let px = 0; px < w; px++) {
-          const t = (px + 0.5) / w;
-          const v = sampleEnvelope(env, t);
-          const bh = v * (h * 0.45);
+          const phaseT = (px + 0.5) / w;
+          const envelopeAmp = sampleEnvelope(env, phaseT);
+          const bh = envelopeAmp * (h * 0.45);
           ctx.fillRect(px, mid - bh, 1, bh * 2);
         }
       }
@@ -204,8 +204,8 @@
         drawRange(selectAnchor, selectCurrent, "rgba(120, 186, 255, 0.28)");
       }
 
-      const t = scrubTime ?? currentTime;
-      const x = (t / duration) * w;
+      const playheadT = scrubTime ?? currentTime;
+      const x = (playheadT / duration) * w;
       ctx.strokeStyle = "rgba(226, 228, 232, 0.85)";
       ctx.lineWidth = 1.5;
       ctx.beginPath();

@@ -1,10 +1,12 @@
+const DEFAULT_VIRTUAL_BUFFER_ROWS = 5;
+
 /** Visible slice for a fixed row height list. */
 export function virtualRange(
   scrollTop: number,
   containerHeight: number,
   rowHeight: number,
   totalItems: number,
-  bufferRows = 5,
+  bufferRows = DEFAULT_VIRTUAL_BUFFER_ROWS,
 ): { start: number; end: number; offsetY: number; totalHeight: number } {
   const totalHeight = totalItems * rowHeight;
   const start = Math.max(0, Math.floor(scrollTop / rowHeight) - bufferRows);

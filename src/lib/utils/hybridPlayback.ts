@@ -49,9 +49,9 @@ export class HybridPlayback {
 
   private applyStreamLoopCallback(): void {
     if (!this.stream) return;
-    const h =
+    const loopHandler =
       this.userWantsLoop && !this.clipActive && this.onPcmStreamLoop ? this.onPcmStreamLoop : undefined;
-    this.stream.onNaturalComplete = h;
+    this.stream.onNaturalComplete = loopHandler;
   }
 
   static canStream(): boolean {
@@ -59,11 +59,11 @@ export class HybridPlayback {
   }
 
   /** Linear gain 0–1 for all playback modes. */
-  setVolume(v: number): void {
-    const g = Math.max(0, Math.min(1, v));
-    this.el.volume = g;
-    this.pcm.setVolume(g);
-    this.stream?.setVolume(g);
+  setVolume(volume: number): void {
+    const clampedGain = Math.max(0, Math.min(1, volume));
+    this.el.volume = clampedGain;
+    this.pcm.setVolume(clampedGain);
+    this.stream?.setVolume(clampedGain);
   }
 
   /** Attach stream URL and reset element. Synchronous — do not await browser buffering. */
@@ -113,12 +113,12 @@ export class HybridPlayback {
     }
     const session = streamId;
     void (async () => {
-      const r = await fetch(convertFileSrc(path));
+      const response = await fetch(convertFileSrc(path));
       if (this.mode !== "pcm_stream" || this.streamSessionId !== session || !this.stream) {
         return;
       }
-      if (!r.ok) return;
-      const ab = await r.arrayBuffer();
+      if (!response.ok) return;
+      const ab = await response.arrayBuffer();
       if (this.mode !== "pcm_stream" || this.streamSessionId !== session || !this.stream) {
         return;
       }

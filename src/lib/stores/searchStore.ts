@@ -8,9 +8,10 @@ function isSearchMode(v: string): v is SearchMode {
   return v === "lexical" || v === "vector" || v === "both";
 }
 
-function configDefaultMode(c: AppConfig): SearchMode {
-  const m = c.search.default_search_mode;
-  if (m === "lexical" || m === "vector" || m === "both") return m;
+function configDefaultMode(cfg: AppConfig): SearchMode {
+  const configuredMode = cfg.search.default_search_mode;
+  if (configuredMode === "lexical" || configuredMode === "vector" || configuredMode === "both")
+    return configuredMode;
   return "lexical";
 }
 
@@ -50,33 +51,35 @@ const state = writable<{
 });
 
 async function runSearch(append: boolean) {
-  const q = get(state).query;
-  state.update((s) => ({ ...s, loading: true }));
+  const currentQuery = get(state).query;
+  state.update((prev) => ({ ...prev, loading: true }));
   try {
-    const res: SearchResults = await ipc.search(q);
+    const res: SearchResults = await ipc.search(currentQuery);
     const newScores = res.relevanceScores ?? null;
-    state.update((s) => {
+    state.update((prev) => {
       let relevanceScores: number[] | null;
       if (append) {
         if (newScores != null && newScores.length === res.assets.length) {
           relevanceScores =
-            s.relevanceScores != null ? [...s.relevanceScores, ...newScores] : [...newScores];
+            prev.relevanceScores != null
+              ? [...prev.relevanceScores, ...newScores]
+              : [...newScores];
         } else {
-          relevanceScores = s.relevanceScores;
+          relevanceScores = prev.relevanceScores;
         }
       } else {
         relevanceScores = newScores;
       }
       return {
-        ...s,
-        results: append ? [...s.results, ...res.assets] : res.assets,
+        ...prev,
+        results: append ? [...prev.results, ...res.assets] : res.assets,
         relevanceScores,
         total: res.total,
         loading: false,
       };
     });
   } catch {
-    state.update((s) => ({ ...s, loading: false }));
+    state.update((prev) => ({ ...prev, loading: false }));
   }
 }
 
@@ -88,18 +91,18 @@ export const searchStore = {
   async applyDefaultSearchModeFromConfig(cfg: AppConfig) {
     let mode = persistedSearchMode(configDefaultMode(cfg));
     try {
-      const s = await ipc.getSemanticSearchStatus();
-      if (Number(s.embeddingCount) === 0 && (mode === "vector" || mode === "both")) {
+      const embeddingStatus = await ipc.getSemanticSearchStatus();
+      if (Number(embeddingStatus.embeddingCount) === 0 && (mode === "vector" || mode === "both")) {
         mode = "lexical";
         persistSearchMode(mode);
       }
     } catch {
       /* keep mode */
     }
-    state.update((s) => ({ ...s, query: { ...s.query, searchMode: mode } }));
+    state.update((prev) => ({ ...prev, query: { ...prev.query, searchMode: mode } }));
   },
   search(text: string) {
-    state.update((s) => ({ ...s, query: { ...s.query, text, offset: 0 } }));
+    state.update((prev) => ({ ...prev, query: { ...prev.query, text, offset: 0 } }));
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       debounceTimer = null;
@@ -107,16 +110,16 @@ export const searchStore = {
     }, 250);
   },
   setFilter<K extends keyof SearchQuery>(key: K, value: SearchQuery[K]) {
-    state.update((s) => ({ ...s, query: { ...s.query, [key]: value, offset: 0 } }));
+    state.update((prev) => ({ ...prev, query: { ...prev.query, [key]: value, offset: 0 } }));
     if (key === "searchMode" && value != null) {
       persistSearchMode(value as SearchMode);
     }
     void runSearch(false);
   },
   nextPage() {
-    state.update((s) => ({
-      ...s,
-      query: { ...s.query, offset: s.query.offset + s.query.limit },
+    state.update((prev) => ({
+      ...prev,
+      query: { ...prev.query, offset: prev.query.offset + prev.query.limit },
     }));
     void runSearch(true);
   },
@@ -131,7 +134,7 @@ export const searchStore = {
     void runSearch(false);
   },
   refresh() {
-    state.update((s) => ({ ...s, query: { ...s.query, offset: 0 } }));
+    state.update((prev) => ({ ...prev, query: { ...prev.query, offset: 0 } }));
     return runSearch(false);
   },
 };

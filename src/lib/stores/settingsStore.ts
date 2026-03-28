@@ -19,15 +19,15 @@ const state = writable<AppConfig>(emptyConfig());
 export const settingsStore = {
   subscribe: state.subscribe,
   async load() {
-    const c = await ipc.getConfig();
+    const config = await ipc.getConfig();
     const base = emptyConfig();
     state.set({
       ...base,
-      ...c,
+      ...config,
       playback: {
         ...base.playback,
-        ...c.playback,
-        loop_playback: c.playback.loop_playback ?? base.playback.loop_playback,
+        ...config.playback,
+        loop_playback: config.playback.loop_playback ?? base.playback.loop_playback,
       },
     });
   },
@@ -35,46 +35,46 @@ export const settingsStore = {
     await ipc.updateConfig(get(state));
   },
   addScanRoot(path: string) {
-    state.update((c) => ({
-      ...c,
-      general: { scan_roots: [...c.general.scan_roots, path] },
+    state.update((cfg) => ({
+      ...cfg,
+      general: { scan_roots: [...cfg.general.scan_roots, path] },
     }));
   },
   removeScanRoot(path: string) {
-    state.update((c) => ({
-      ...c,
-      general: { scan_roots: c.general.scan_roots.filter((p) => p !== path) },
+    state.update((cfg) => ({
+      ...cfg,
+      general: { scan_roots: cfg.general.scan_roots.filter((p) => p !== path) },
     }));
   },
   setPeakResolution(n: number) {
-    state.update((c) => ({
-      ...c,
-      indexing: { ...c.indexing, peak_resolution: n },
+    state.update((cfg) => ({
+      ...cfg,
+      indexing: { ...cfg.indexing, peak_resolution: n },
     }));
   },
   setAutoPlayOnSelect(v: boolean) {
-    state.update((c) => ({
-      ...c,
-      playback: { ...c.playback, auto_play_on_select: v },
+    state.update((cfg) => ({
+      ...cfg,
+      playback: { ...cfg.playback, auto_play_on_select: v },
     }));
   },
   setWatchScanRoots(v: boolean) {
-    state.update((c) => ({
-      ...c,
-      indexing: { ...c.indexing, watch_scan_roots: v },
+    state.update((cfg) => ({
+      ...cfg,
+      indexing: { ...cfg.indexing, watch_scan_roots: v },
     }));
   },
   setBufferCacheCount(n: number) {
-    const v = Math.min(50, Math.max(1, Math.floor(n)));
-    state.update((c) => ({
-      ...c,
-      playback: { ...c.playback, buffer_cache_count: v },
+    const clamped = Math.min(50, Math.max(1, Math.floor(n)));
+    state.update((cfg) => ({
+      ...cfg,
+      playback: { ...cfg.playback, buffer_cache_count: clamped },
     }));
   },
   setLoopPlayback(v: boolean) {
-    state.update((c) => ({
-      ...c,
-      playback: { ...c.playback, loop_playback: v },
+    state.update((cfg) => ({
+      ...cfg,
+      playback: { ...cfg.playback, loop_playback: v },
     }));
   },
 };
