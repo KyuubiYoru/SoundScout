@@ -1,7 +1,25 @@
-# Tauri + SvelteKit + TypeScript
+# SoundScout
 
-This template should help get you started developing with Tauri, SvelteKit and TypeScript in Vite.
+A desktop app for browsing and searching large sound effect libraries. Built with Tauri, SvelteKit, and Rust.
 
-## Recommended IDE Setup
+## Features
 
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer).
+- Scan local folders and index audio files into a searchable library
+- Lexical and semantic (embedding-based) search
+- Waveform preview with clip selection
+- Tagging, ratings, and favorites
+- Post-processing: loop detection, normalize, crossfade, trim
+- Copy tracks or clips directly to clipboard
+
+## Platform
+
+Only tested on Arch-based Linux. Windows support is planned but not yet available.
+
+## Dev Setup
+
+Requires Node.js, Rust, and the Tauri CLI prerequisites for your platform.
+
+```bash
+npm install
+npm run tauri dev
+```
