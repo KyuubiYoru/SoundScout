@@ -1,0 +1,5 @@
+# Use this crate's `src-tauri/target/` for all artifacts.
+# If `CARGO_TARGET_DIR` is set globally to another project (e.g. after renaming SoundVault → SoundScout),
+# Tauri's build script resolves plugin permission paths under that old tree and fails.
+[build]
+target-dir = "target"
