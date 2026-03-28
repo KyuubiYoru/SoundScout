@@ -1,0 +1,52 @@
+[package]
+name = "tauri-app"
+version = "0.1.0"
+description = "SoundScout — search and export game audio SFX libraries"
+authors = ["you"]
+edition = "2021"
+default-run = "tauri-app"
+
+[lib]
+name = "tauri_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "protocol-asset"] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+toml = "0.8"
+dirs = "6"
+rusqlite = { version = "0.34", features = ["bundled", "column_decltype"] }
+r2d2 = "0.8"
+r2d2_sqlite = "0.27"
+walkdir = "2"
+symphonia = { version = "0.5", default-features = true }
+realfft = "3"
+rayon = "1"
+lru = "0.12"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+bytemuck = "1.16"
+# `wayland-data-control`: native Wayland file clipboard (XWayland fallback often yields empty paste).
+arboard = { version = "3", default-features = true, features = ["wayland-data-control"] }
+notify-debouncer-mini = "0.4"
+fastembed = { version = "5.13", default-features = false, features = [
+    "hf-hub-native-tls",
+    "ort-download-binaries-native-tls",
+] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = "deny"
+pedantic = "warn"
