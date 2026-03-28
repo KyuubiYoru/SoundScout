@@ -2,6 +2,9 @@
 
 Desktop app for browsing and searching large sound effect libraries. Built with Tauri, SvelteKit, and Rust.
 
+<img width="1280" height="696" alt="image" src="https://github.com/user-attachments/assets/75e22c79-ca35-41a3-8798-e1a7d03e98bb" />
+
+
 ## Features
 
 - Scan local folders and index audio files into a searchable library
