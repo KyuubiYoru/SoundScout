@@ -1,6 +1,6 @@
 # SoundScout
 
-A desktop app for browsing and searching large sound effect libraries. Built with Tauri, SvelteKit, and Rust.
+Desktop app for browsing and searching large sound effect libraries. Built with Tauri, SvelteKit, and Rust.
 
 ## Features
 
@@ -13,7 +13,7 @@ A desktop app for browsing and searching large sound effect libraries. Built wit
 
 ## Platform
 
-Tested on Arch-based Linux. A Windows release build is possible but **untested** (build may fail or the app may misbehave until someone validates it).
+Tested on Arch-based Linux. A Windows release build is possible but untested. The build may fail or the app may misbehave until someone validates it.
 
 ### Windows build (untested)
 
@@ -29,7 +29,7 @@ From the repo root, after `npm install`:
 .\scripts\build-windows.ps1
 ```
 
-The script checks prerequisites (Rust target, Node, Tauri CLI) before building. Alternatively, skip the preflight checks with:
+The script checks prerequisites (Rust target, Node, Tauri CLI) before building. To skip the preflight checks:
 
 ```powershell
 npm run release:windows
@@ -45,9 +45,9 @@ npm run release:linux
 
 Output is written under `src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/`.
 
-## Dev Setup
+## Dev setup
 
-Requires Node.js and Rust. The Tauri CLI is installed locally via `npm install` — no global `cargo install tauri-cli` needed.
+Requires Node.js and Rust. The Tauri CLI is installed locally via `npm install`, so no global `cargo install tauri-cli` is needed.
 
 ```bash
 npm install
