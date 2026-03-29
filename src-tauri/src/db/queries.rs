@@ -7,9 +7,30 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use crate::db::models::{Asset, FilterOptions, FolderNode, NewAsset, SemanticSearchStatus, Tag, TagWithCount};
 use crate::error::SoundScoutError;
 
-/// Normalize folder keys to `/` so trie building and SQL subtree checks match across platforms.
+/// Single path segment that is a Windows drive root (`C:`, `D:`, ...).
+fn is_windows_drive_path_segment(segment: &str) -> bool {
+    let mut chars = segment.chars();
+    matches!(
+        (chars.next(), chars.next(), chars.next()),
+        (Some(drive), Some(':'), None) if drive.is_ascii_alphabetic()
+    )
+}
+
+/// Normalize folder keys: backslashes to `/`, and strip a spurious leading `/` before `X:/`
+/// so trie paths match [`Path::parent()`] strings on Windows (`C:/foo` not `/C:/foo`).
 pub fn normalize_folder_key(folder: &str) -> String {
-    folder.replace('\\', "/")
+    let s = folder.replace('\\', "/");
+    if s.len() >= 3 {
+        let b = s.as_bytes();
+        if b[0] == b'/'
+            && b[1].is_ascii_alphabetic()
+            && b[2] == b':'
+            && (b.len() == 3 || b.get(3) == Some(&b'/'))
+        {
+            return s[1..].to_string();
+        }
+    }
+    s
 }
 
 fn asset_from_row(row: &Row<'_>) -> Result<Asset, rusqlite::Error> {
@@ -244,8 +265,12 @@ pub fn build_folder_tree(flat: &[(String, u64)]) -> Vec<FolderNode> {
         let mut acc = String::new();
         for (i, part) in parts.iter().enumerate() {
             if acc.is_empty() {
-                acc.push('/');
-                acc.push_str(part);
+                if is_windows_drive_path_segment(part.as_str()) {
+                    acc.push_str(part);
+                } else {
+                    acc.push('/');
+                    acc.push_str(part);
+                }
             } else {
                 acc.push('/');
                 acc.push_str(part);
@@ -261,10 +286,17 @@ pub fn build_folder_tree(flat: &[(String, u64)]) -> Vec<FolderNode> {
     fn to_folder_nodes(prefix: &str, map: &BTreeMap<String, TrieNode>) -> Vec<FolderNode> {
         let mut out = Vec::new();
         for (name, n) in map {
-            let path = n
-                .path
-                .clone()
-                .unwrap_or_else(|| format!("{prefix}/{name}").replace("//", "/"));
+            let path = n.path.clone().unwrap_or_else(|| {
+                if prefix.is_empty() {
+                    if is_windows_drive_path_segment(name.as_str()) {
+                        name.to_string()
+                    } else {
+                        format!("/{name}")
+                    }
+                } else {
+                    format!("{prefix}/{name}")
+                }
+            });
             let children = to_folder_nodes(&path, &n.children);
             out.push(FolderNode {
                 name: name.clone(),
@@ -876,8 +908,34 @@ mod tests {
             .iter()
             .find(|n| n.name == "lib")
             .expect("lib segment");
-        assert_eq!(lib.path, "/C:/lib");
+        assert_eq!(lib.path, "C:/lib");
         assert!(lib.children.iter().any(|n| n.name == "a"));
+    }
+
+    #[test]
+    fn normalize_folder_key_strips_slash_before_windows_drive() {
+        assert_eq!(
+            normalize_folder_key(r"/C:\Users\lib\a"),
+            "C:/Users/lib/a"
+        );
+    }
+
+    #[test]
+    fn get_assets_by_folder_matches_windows_style_folder_keys() {
+        let pool = DbPool::new_in_memory().expect("pool");
+        let conn = pool.get().expect("c");
+        insert_asset_batch(
+            &conn,
+            &[
+                sample_asset(r"C:\lib\a\x.wav", "C:/lib/a"),
+                sample_asset(r"C:\lib\b\y.wav", "C:/lib/b"),
+            ],
+        )
+        .expect("ins");
+        let v = get_assets_by_folder(&conn, "C:/lib", 50, 0).expect("q");
+        assert_eq!(v.len(), 2);
+        let by_legacy_tree_path = get_assets_by_folder(&conn, "/C:/lib", 50, 0).expect("legacy");
+        assert_eq!(by_legacy_tree_path.len(), 2);
     }
 
     #[test]
