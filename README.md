@@ -14,11 +14,32 @@ Desktop app for browsing and searching large sound effect libraries. Built with 
 - Post-processing: loop detection, normalize, crossfade, trim
 - Copy tracks or clips directly to clipboard
 
+## Download
+
+Grab the latest build from the [releases page](https://github.com/KyuubiYoru/SoundScout/releases/latest).
+
+| Platform | File |
+|---|---|
+| Linux (x86_64) | `SoundScout_0.1.2_amd64.AppImage` |
+| Windows (x86_64) | `SoundScout_0.1.2_x86_64-pc-windows-msvc.exe` (experimental) |
+
+Linux: download the AppImage, mark it executable with `chmod +x`, and run it. No installation needed.
+
+Windows: standalone portable build. Basic functionality works; some edge cases may not yet be covered.
+
 ## Platform
 
-Tested on Arch-based Linux. A Windows release build is possible but untested. The build may fail or the app may misbehave until someone validates it.
+Developed on Arch-based Linux. Windows is supported but experimental.
 
-### Windows build (untested)
+### Build from source: Linux
+
+```bash
+npm run release:linux
+```
+
+Output is written under `src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/`.
+
+### Build from source: Windows
 
 Prerequisites: Node.js, Rust, [Tauri's Windows prerequisites](https://tauri.app/start/prerequisites/) (Visual Studio Build Tools with the C++ workload, or full Visual Studio), and the MSVC target:
 
@@ -32,21 +53,13 @@ From the repo root, after `npm install`:
 .\scripts\build-windows.ps1
 ```
 
-The script checks prerequisites (Rust target, Node, Tauri CLI) before building. To skip the preflight checks:
+The script checks for the Rust target, Node, and Tauri CLI before building. To skip those checks:
 
 ```powershell
 npm run release:windows
 ```
 
-Installers and bundles are written under `src-tauri\target\x86_64-pc-windows-msvc\release\bundle\`.
-
-### Linux release build
-
-```bash
-npm run release:linux
-```
-
-Output is written under `src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/`.
+Output is written under `src-tauri\target\x86_64-pc-windows-msvc\release\bundle\`.
 
 ## Dev setup
 
