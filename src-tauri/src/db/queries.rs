@@ -7,6 +7,11 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use crate::db::models::{Asset, FilterOptions, FolderNode, NewAsset, SemanticSearchStatus, Tag, TagWithCount};
 use crate::error::SoundScoutError;
 
+/// Normalize folder keys to `/` so trie building and SQL subtree checks match across platforms.
+pub fn normalize_folder_key(folder: &str) -> String {
+    folder.replace('\\', "/")
+}
+
 fn asset_from_row(row: &Row<'_>) -> Result<Asset, rusqlite::Error> {
     Ok(Asset {
         id: row.get(0)?,
@@ -226,6 +231,7 @@ struct TrieNode {
 pub fn build_folder_tree(flat: &[(String, u64)]) -> Vec<FolderNode> {
     let mut root = TrieNode::default();
     for (folder, count) in flat {
+        let folder = normalize_folder_key(folder);
         let parts: Vec<String> = folder
             .split('/')
             .filter(|s| !s.is_empty())
@@ -284,6 +290,7 @@ pub fn build_folder_tree(flat: &[(String, u64)]) -> Vec<FolderNode> {
 
 /// Count assets under `folder` (that folder and any descendant path). Same rules as [`get_assets_by_folder`].
 pub fn count_assets_under_folder(conn: &Connection, folder: &str) -> Result<u64, SoundScoutError> {
+    let folder = normalize_folder_key(folder);
     if folder.is_empty() {
         return Ok(0);
     }
@@ -296,7 +303,7 @@ pub fn count_assets_under_folder(conn: &Connection, folder: &str) -> Result<u64,
     let n: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM assets WHERE folder = ?1 OR (LENGTH(folder) > LENGTH(?1) AND SUBSTR(folder, 1, LENGTH(?1)) = ?1 AND SUBSTR(folder, LENGTH(?1) + 1, 1) = '/')",
-            params![folder],
+            params![folder.as_str()],
             |row| row.get(0),
         )
         .map_err(SoundScoutError::Database)?;
@@ -376,6 +383,7 @@ pub fn get_assets_by_folder(
     limit: u32,
     offset: u32,
 ) -> Result<Vec<Asset>, SoundScoutError> {
+    let folder = normalize_folder_key(folder);
     if folder.is_empty() {
         return Ok(Vec::new());
     }
@@ -402,7 +410,7 @@ pub fn get_assets_by_folder(
         )
         .map_err(SoundScoutError::Database)?;
     let rows = stmt
-        .query_map(params![folder, limit_i, offset_i], |row| asset_from_row(row))
+        .query_map(params![folder.as_str(), limit_i, offset_i], |row| asset_from_row(row))
         .map_err(SoundScoutError::Database)?;
     for r in rows {
         out.push(r.map_err(SoundScoutError::Database)?);
@@ -854,6 +862,22 @@ mod tests {
         ];
         let tree = build_folder_tree(&flat);
         assert!(!tree.is_empty());
+    }
+
+    #[test]
+    fn build_folder_tree_treats_backslashes_as_separators() {
+        let flat = vec![(r"C:\lib\a".into(), 1u64), (r"C:\lib\a\b".into(), 1u64)];
+        let tree = build_folder_tree(&flat);
+        assert_eq!(tree.len(), 1);
+        assert_eq!(tree[0].name, "C:");
+        assert!(!tree[0].children.is_empty());
+        let lib = tree[0]
+            .children
+            .iter()
+            .find(|n| n.name == "lib")
+            .expect("lib segment");
+        assert_eq!(lib.path, "/C:/lib");
+        assert!(lib.children.iter().any(|n| n.name == "a"));
     }
 
     #[test]

@@ -3,6 +3,7 @@
 use rusqlite::types::Value;
 
 use crate::db::models::{SearchQuery, SortDirection, SortField};
+use crate::db::queries::normalize_folder_key;
 use crate::search::constants::FTS_MIN_QUERY_CHARS;
 
 /// Strip characters and tokens unsafe for FTS5 / our simplified query model.
@@ -73,6 +74,7 @@ pub(crate) fn append_filters(sql: &mut String, params: &mut Vec<Value>, query: &
         }
     }
     if let Some(root) = &query.folder_root {
+        let root = normalize_folder_key(root);
         if root.is_empty() {
             sql.push_str(" AND 1=0");
         } else if root != "/" {

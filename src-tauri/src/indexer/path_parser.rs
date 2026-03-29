@@ -3,13 +3,16 @@
 use std::path::{Component, Path};
 
 use crate::db::models::PathMetadata;
+use crate::db::queries::normalize_folder_key;
 
 /// Parse [`PathMetadata`] relative to `root`.
 pub fn parse_path(root: &Path, file_path: &Path) -> PathMetadata {
-    let folder = file_path
-        .parent()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default();
+    let folder = normalize_folder_key(
+        &file_path
+            .parent()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+    );
 
     let rel = file_path.strip_prefix(root).unwrap_or(file_path);
     let rel_parent = rel.parent().unwrap_or_else(|| Path::new(""));
@@ -44,7 +47,7 @@ pub fn parse_path(root: &Path, file_path: &Path) -> PathMetadata {
     PathMetadata {
         filename: stem,
         extension: ext,
-        folder: folder.to_string(),
+        folder,
         publisher,
         category,
     }

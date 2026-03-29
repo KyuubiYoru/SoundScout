@@ -84,6 +84,11 @@ DROP TABLE IF EXISTS collection_items;
 DROP TABLE IF EXISTS collections;
 ";
 
+/// Windows indexed paths used `\` in `folder`; trie and subtree SQL assume `/`.
+const V005_FOLDER_FORWARD_SLASHES: &str = r"
+UPDATE assets SET folder = REPLACE(folder, CHAR(92), '/');
+";
+
 /// Apply pending migrations in order.
 pub fn run_migrations(conn: &Connection) -> Result<(), SoundScoutError> {
     let current: i32 = conn
@@ -121,6 +126,15 @@ pub fn run_migrations(conn: &Connection) -> Result<(), SoundScoutError> {
         conn.execute_batch(V004_DROP_COLLECTIONS)
             .map_err(SoundScoutError::Database)?;
         conn.pragma_update(None, "user_version", 4i32)
+            .map_err(SoundScoutError::Database)?;
+    }
+    let current: i32 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(SoundScoutError::Database)?;
+    if current < 5 {
+        conn.execute_batch(V005_FOLDER_FORWARD_SLASHES)
+            .map_err(SoundScoutError::Database)?;
+        conn.pragma_update(None, "user_version", 5i32)
             .map_err(SoundScoutError::Database)?;
     }
     Ok(())
@@ -171,6 +185,28 @@ mod tests {
                 .expect("q");
             assert_eq!(n, 0, "table {name} should not exist");
         }
+    }
+
+    #[test]
+    fn v005_normalizes_backslashes_in_folder_column() {
+        let conn = Connection::open_in_memory().expect("mem");
+        conn.execute_batch(V001_INITIAL).expect("v1");
+        conn.pragma_update(None, "user_version", 4i32).expect("ver");
+        conn
+            .execute(
+                "INSERT INTO assets (path, filename, extension, folder, file_size, modified_at, indexed_at) VALUES ('c', 'c', 'wav', ?1, 1, 0, 0)",
+                [r"X:\lib\sub"],
+            )
+            .expect("ins");
+        run_migrations(&conn).expect("v5");
+        let folder: String = conn
+            .query_row("SELECT folder FROM assets WHERE path = 'c'", [], |row| row.get(0))
+            .expect("row");
+        assert_eq!(folder, "X:/lib/sub");
+        let v: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .expect("pragma");
+        assert_eq!(v, 5);
     }
 
     #[test]
